@@ -1,0 +1,91 @@
+#===============================================================================
+# FreeScout Deployment Configuration (TEMPLATE)
+# Copy this file to 'deploy.conf' and customize for your environment.
+#===============================================================================
+
+#===============================================================================
+# INSTALLATION SETTINGS
+#===============================================================================
+
+# Git Repository to deploy from
+GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
+GIT_BRANCH="laravel-11-foundation"
+
+# Installation path on the server
+DEFAULT_INSTALL_DIR="/opt/freescout-docker"
+
+#===============================================================================
+# NETWORK SETTINGS
+#===============================================================================
+
+# Domain name for the application (e.g., tickets.yourcompany.com)
+DOMAIN_NAME="freescout.example.com"
+
+# Cloudflare Tunnel Token (Required for OrbStack/macOS deployments)
+CF_TUNNEL_TOKEN=""
+
+# Docker Network Subnet (Avoid conflicts with existing networks)
+DOCKER_SUBNET="172.20.0.0/16"
+
+#===============================================================================
+# DATABASE SETTINGS
+#===============================================================================
+# It is recommended to change these for production!
+
+DB_ROOT_PASS="change_me_root_password"
+DB_USER="freescout"
+DB_PASS="change_me_user_password"
+DB_NAME="freescout"
+
+#===============================================================================
+# DEFAULT USERS (Created on fresh install)
+#===============================================================================
+
+# 1. Admin User (Full System Access)
+ADMIN_EMAIL="admin@example.com"
+ADMIN_PASS="change_me_admin_password"
+ADMIN_FIRST_NAME="System"
+ADMIN_LAST_NAME="Administrator"
+
+# 2. Agent User (Standard Support Access)
+AGENT_EMAIL="agent@example.com"
+AGENT_PASS="change_me_agent_password"
+AGENT_FIRST_NAME="Support"
+AGENT_LAST_NAME="Agent"
+
+# 3. Finance User (Billing & Invoice Access)
+FINANCE_EMAIL="finance@example.com"
+FINANCE_PASS="change_me_finance_password"
+FINANCE_FIRST_NAME="Finance"
+FINANCE_LAST_NAME="Manager"
+
+# 4. Reporter User (Read-Only Access)
+REPORTER_EMAIL="reporter@example.com"
+REPORTER_PASS="change_me_reporter_password"
+REPORTER_FIRST_NAME="Report"
+REPORTER_LAST_NAME="Viewer"
+
+#===============================================================================
+# INTEGRATIONS (Optional)
+#===============================================================================
+
+# Google OAuth
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+GOOGLE_ADMIN_EMAILS=""
+GOOGLE_ALLOWED_DOMAINS=""
+
+#===============================================================================
+# ADVANCED & MODULES
+#===============================================================================
+
+# GitHub Token for private modules (Optional)
+export REPO_TOKEN=""
+
+# Configure modules to install
+# Format: "ModuleName|RepoURL|TokenEnvVarName|Branch"
+# Uncomment and edit lines below to install modules.
+MODULES_TO_INSTALL=(
+    # "Crm|https://github.com/YourOrg/Crm.git|REPO_TOKEN|main"
+    # "PIB|https://github.com/YourOrg/PIB.git|REPO_TOKEN|main"
+)

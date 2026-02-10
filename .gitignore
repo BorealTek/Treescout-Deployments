@@ -1,0 +1,11 @@
+# Ignore local configuration with secrets
+deploy.conf
+
+# Ignore SSL certificates generated during deployment
+nginx/ssl/
+*.pem
+*.key
+
+# Ignore system files
+.DS_Store
+Thumbs.db
