@@ -16,12 +16,12 @@ You can run the installers directly without cloning the repository manually. The
 
 **Production (Ubuntu/Linux):**
 ```bash
-curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/docker_deploy.sh | sudo bash
+sudo bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/docker_deploy.sh)
 ```
 
 **Local Dev (macOS/OrbStack):**
 ```bash
-curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/orbstack_deploy.sh | bash
+bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/orbstack_deploy.sh)
 ```
 
 ## 🚀 Manual Quick Start

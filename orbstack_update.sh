@@ -74,24 +74,22 @@ log_step() {
 
 show_banner() {
     clear
-    # BorealTek Treescout - "PyBonsai" Style Art
     echo -e "${FOREST}       # #### ####${NC}"
     echo -e "${FOREST}     ### \\/#|### |/####${NC}"
-    echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}        ${CYAN} ____                          _ _______    _    ${NC}"
-    echo -e "${FOREST}  ###  \\/###|/ \\/ # ###${NC}        ${CYAN}|  _ \\                        | |__   __|  | |   ${NC}"
-    echo -e "${FOREST} ##_\\_#\\_\\## | #/###_/_####${NC}     ${CYAN}| |_) | ___  _ __ ___  __ _  | |  | | ___| | __ ${NC}"
-    echo -e "${FOREST}## #### # \\ #| /  #### ##/##${NC}    ${CYAN}|  _ < / _ \\| '__/ _ \\/ _\` | | |  | |/ _ \\ |/ / ${NC}"
-    echo -e "${FOREST} __#_--###\`  |{,###---###-~${NC}    ${CYAN}| |_) | (_) | | |  __/ (_| | | |  | |  __/   <  ${NC}"
-    echo -e "${FOREST}           \\ }{${NC}                ${CYAN}|____/ \\___/|_|  \\___|\\__,_| |_|  |_|\\___|_|\\_\\ ${NC}"
+    echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}      ${CYAN}  ____                        _ _______   _          ${NC}"
+    echo -e "${FOREST}  ###  \\/###|/ \\/ # ###${NC}        ${CYAN} |  _ \\                      | |__   __| | |        ${NC}"
+    echo -e "${FOREST} ##_\\_#\\_\\## | #/###_/_####${NC}   ${CYAN}  | |_) | ___   _ __.__  ___  | |  | |  __| | __     ${NC}"
+    echo -e "${FOREST}## #### # \\ #| /  #### ##/##${NC}    ${CYAN}|  _ < / _ \| '__/ _ \/ _ \\\`| |  | |/ _ \ |/ /     ${NC}"
+    echo -e "${FOREST} __#_--###\`  |{,###---###-~${NC}     ${CYAN}| |_) | (_) | |  | __/ (_| || |  | || __/   <        ${NC}"
+    echo -e "${FOREST}           \\ }{${NC}                 ${CYAN}|____/ \\___/|_|  \\___|\\__,_||_|  |_|\\___|_|\\_\\ ${NC}"
     echo -e "${FOREST}            }}{${NC}"
-    echo -e "${FOREST}            }}{${NC}                      ${GREEN} Q U I C K    U P D A T E R${NC}"
+    echo -e "${FOREST}            }}{${NC}                     ${GREEN} T R E E S C O U T   E N T E R P R I S E     ${NC}"
     echo -e "${FOREST}            }}{${NC}"
     echo -e "${FOREST}      , -=-~{ .-^- _${NC}"
     echo -e "${FOREST}            \`${NC}"
     echo ""
     echo -e "${COLOR_DIM}────────────────────────────────────────────────────────────────────────${NC}"
 }
-
 
 cleanup() {
     local exit_code=$?

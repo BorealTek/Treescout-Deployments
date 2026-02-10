@@ -112,6 +112,22 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+safe_read() {
+    # $1: prompt
+    # $2: variable name
+    if [ -t 0 ]; then
+        read -rp "$1" "$2"
+    elif [ -c /dev/tty ]; then
+        # Prompt to stderr
+        echo -ne "$1" >&2
+        read -r "$2" < /dev/tty
+        echo "" >&2
+    else
+        log_error "Interactive input required but no TTY available."
+        exit 1
+    fi
+}
+
 validate_required_var() {
     local var_name=$1
     local var_value=${2:-}
@@ -201,17 +217,16 @@ preflight_checks() {
 
 show_banner() {
     clear
-    # BorealTek Treescout - "PyBonsai" Style Art
     echo -e "${FOREST}       # #### ####${NC}"
     echo -e "${FOREST}     ### \\/#|### |/####${NC}"
-    echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}        ${CYAN} ____                          _ _______    _    ${NC}"
-    echo -e "${FOREST}  ###  \\/###|/ \\/ # ###${NC}        ${CYAN}|  _ \\                        | |__   __|  | |   ${NC}"
-    echo -e "${FOREST} ##_\\_#\\_\\## | #/###_/_####${NC}     ${CYAN}| |_) | ___  _ __ ___  __ _  | |  | | ___| | __ ${NC}"
-    echo -e "${FOREST}## #### # \\ #| /  #### ##/##${NC}    ${CYAN}|  _ < / _ \\| '__/ _ \\/ _\` | | |  | |/ _ \\ |/ / ${NC}"
-    echo -e "${FOREST} __#_--###\`  |{,###---###-~${NC}    ${CYAN}| |_) | (_) | | |  __/ (_| | | |  | |  __/   <  ${NC}"
-    echo -e "${FOREST}           \\ }{${NC}                ${CYAN}|____/ \\___/|_|  \\___|\\__,_| |_|  |_|\\___|_|\\_\\ ${NC}"
+    echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}      ${CYAN}  ____                        _ _______   _          ${NC}"
+    echo -e "${FOREST}  ###  \\/###|/ \\/ # ###${NC}        ${CYAN} |  _ \\                      | |__   __| | |        ${NC}"
+    echo -e "${FOREST} ##_\\_#\\_\\## | #/###_/_####${NC}   ${CYAN}  | |_) | ___   _ __.__  ___  | |  | |  __| | __     ${NC}"
+    echo -e "${FOREST}## #### # \\ #| /  #### ##/##${NC}    ${CYAN}|  _ < / _ \| '__/ _ \/ _ \\\`| |  | |/ _ \ |/ /     ${NC}"
+    echo -e "${FOREST} __#_--###\`  |{,###---###-~${NC}     ${CYAN}| |_) | (_) | |  | __/ (_| || |  | || __/   <        ${NC}"
+    echo -e "${FOREST}           \\ }{${NC}                 ${CYAN}|____/ \\___/|_|  \\___|\\__,_||_|  |_|\\___|_|\\_\\ ${NC}"
     echo -e "${FOREST}            }}{${NC}"
-    echo -e "${FOREST}            }}{${NC}                      ${GREEN} T R E E S C O U T   E N T E R P R I S E${NC}"
+    echo -e "${FOREST}            }}{${NC}                     ${GREEN} T R E E S C O U T   E N T E R P R I S E     ${NC}"
     echo -e "${FOREST}            }}{${NC}"
     echo -e "${FOREST}      , -=-~{ .-^- _${NC}"
     echo -e "${FOREST}            \`${NC}"
@@ -229,8 +244,8 @@ load_or_create_config() {
         
         log_success "Configuration file found: $CONFIG_FILE"
         
-        if [ -t 0 ]; then  # Check if stdin is a terminal
-            read -rp "Use this configuration? [Y/n] " use_config
+        if [ -t 0 ] || [ -c /dev/tty ]; then  # Check if stdin is a terminal or tty available
+            safe_read "Use this configuration? [Y/n] " use_config
             use_config=${use_config:-Y}
             
             if [[ "$use_config" =~ ^[Yy]$ ]]; then
@@ -249,8 +264,8 @@ load_or_create_config() {
     else
         log_info "No configuration file found"
         
-        if [ -t 0 ]; then
-            read -rp "Create configuration template? [y/N] " create_config
+        if [ -t 0 ] || [ -c /dev/tty ]; then
+            safe_read "Create configuration template? [y/N] " create_config
             
             if [[ "$create_config" =~ ^[Yy]$ ]]; then
                 create_config_template
@@ -337,14 +352,14 @@ interactive_menu() {
         echo -e "  ${COLOR_PRIMARY}[4]${NC} View Logs"
         echo -e "  ${COLOR_PRIMARY}[0]${NC} Exit"
         echo ""
-        read -p "  Enter Selection: " choice
+        safe_read "  Enter Selection: " choice
         
         case $choice in
             1) return 0 ;;
             2) 
                 if [ -f "./update.sh" ]; then
                     bash ./update.sh
-                    read -p "Press Enter to continue..."
+                    safe_read "Press Enter to continue..." dummy
                 else
                     log_error "Update script not found."
                     sleep 2
@@ -375,32 +390,32 @@ interactive_setup() {
     
     # Repository configuration
     echo -e "Default Repository: ${YELLOW}$DEFAULT_REPO${NC}"
-    read -rp "Press ENTER to confirm, or paste a new URL: " input_repo
+    safe_read "Press ENTER to confirm, or paste a new URL: " input_repo
     GIT_REPO_URL="${input_repo:-$DEFAULT_REPO}"
     
     echo -e "Default Branch: ${YELLOW}$DEFAULT_BRANCH${NC}"
-    read -rp "Press ENTER to confirm, or type a new branch: " input_branch
+    safe_read "Press ENTER to confirm, or type a new branch: " input_branch
     GIT_BRANCH="${input_branch:-$DEFAULT_BRANCH}"
     echo ""
     
     # Network configuration
     log_info "Network Configuration"
     while [ -z "${DOMAIN_NAME:-}" ]; do
-        read -rp "Domain Name: " DOMAIN_NAME
+        safe_read "Domain Name: " DOMAIN_NAME
     done
     
     while [ -z "${DOCKER_SUBNET:-}" ]; do
-        read -rp "Docker Subnet (CIDR, e.g. 192.168.220.0/24): " DOCKER_SUBNET
+        safe_read "Docker Subnet (CIDR, e.g. 192.168.220.0/24): " DOCKER_SUBNET
     done
     echo ""
     
     # Google OAuth (optional)
     log_info "Google OAuth (Optional)"
-    read -rp "Google Client ID (Enter to skip): " GOOGLE_CLIENT_ID
+    safe_read "Google Client ID (Enter to skip): " GOOGLE_CLIENT_ID
     if [ -n "$GOOGLE_CLIENT_ID" ]; then
-        read -rp "Google Client Secret: " GOOGLE_CLIENT_SECRET
-        read -rp "Google Admin Emails (comma separated): " GOOGLE_ADMIN_EMAILS
-        read -rp "Allowed Domains (comma separated): " GOOGLE_ALLOWED_DOMAINS
+        safe_read "Google Client Secret: " GOOGLE_CLIENT_SECRET
+        safe_read "Google Admin Emails (comma separated): " GOOGLE_ADMIN_EMAILS
+        safe_read "Allowed Domains (comma separated): " GOOGLE_ALLOWED_DOMAINS
     fi
     echo ""
     
@@ -410,7 +425,7 @@ interactive_setup() {
         log_warning "WARNING: Reusing existing database"
         log_warning "Seeding may cause conflicts or duplicates"
     fi
-    read -rp "Seed sample data (Mailboxes, Users, Conversations)? [y/N] " input_seed
+    safe_read "Seed sample data (Mailboxes, Users, Conversations)? [y/N] " input_seed
     if [[ "$input_seed" =~ ^[Yy]$ ]]; then
         SEED_SAMPLE_DATA=true
     else
@@ -431,7 +446,7 @@ interactive_setup() {
     fi
     echo "────────────────────────────────────────────────────────────"
     echo ""
-    read -rp "Press ENTER to start deployment (or Ctrl+C to cancel)..."
+    safe_read "Press ENTER to start deployment (or Ctrl+C to cancel)..." dummy
 }
 
 check_existing_installation() {
@@ -514,7 +529,7 @@ decommission_existing() {
         echo "  2) Nuke everything (fresh install, all data lost)"
         echo "  3) Cancel deployment"
         echo ""
-        read -p "Enter choice [1-3]: " choice
+        safe_read "Enter choice [1-3]: " choice
         
         case $choice in
             1)
@@ -524,7 +539,7 @@ decommission_existing() {
                 ;;
             2)
                 log_warning "Nuking everything - all data will be lost!"
-                read -p "Type 'yes' to confirm: " confirm
+                safe_read "Type 'yes' to confirm: " confirm
                 if [ "$confirm" = "yes" ]; then
                     REUSE_DB=false
                     log_info "Stopping and removing containers and volumes..."

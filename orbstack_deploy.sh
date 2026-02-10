@@ -114,6 +114,22 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+safe_read() {
+    # $1: prompt
+    # $2: variable name
+    if [ -t 0 ]; then
+        read -rp "$1" "$2"
+    elif [ -c /dev/tty ]; then
+        # Prompt to stderr so it shows up
+        echo -ne "$1" >&2
+        read -r "$2" < /dev/tty
+        echo "" >&2
+    else
+        log_error "Interactive input required but no TTY available."
+        exit 1
+    fi
+}
+
 validate_required_var() {
     local var_name=$1
     local var_value=${2:-}
@@ -189,17 +205,16 @@ preflight_checks() {
 
 show_banner() {
     clear
-    # BorealTek Treescout - "PyBonsai" Style Art
     echo -e "${FOREST}       # #### ####${NC}"
     echo -e "${FOREST}     ### \\/#|### |/####${NC}"
-    echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}        ${CYAN} ____                          _ _______    _    ${NC}"
-    echo -e "${FOREST}  ###  \\/###|/ \\/ # ###${NC}        ${CYAN}|  _ \\                        | |__   __|  | |   ${NC}"
-    echo -e "${FOREST} ##_\\_#\\_\\## | #/###_/_####${NC}     ${CYAN}| |_) | ___  _ __ ___  __ _  | |  | | ___| | __ ${NC}"
-    echo -e "${FOREST}## #### # \\ #| /  #### ##/##${NC}    ${CYAN}|  _ < / _ \\| '__/ _ \\/ _\` | | |  | |/ _ \\ |/ / ${NC}"
-    echo -e "${FOREST} __#_--###\`  |{,###---###-~${NC}    ${CYAN}| |_) | (_) | | |  __/ (_| | | |  | |  __/   <  ${NC}"
-    echo -e "${FOREST}           \\ }{${NC}                ${CYAN}|____/ \\___/|_|  \\___|\\__,_| |_|  |_|\\___|_|\\_\\ ${NC}"
+    echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}      ${CYAN}  ____                        _ _______   _          ${NC}"
+    echo -e "${FOREST}  ###  \\/###|/ \\/ # ###${NC}        ${CYAN} |  _ \\                      | |__   __| | |        ${NC}"
+    echo -e "${FOREST} ##_\\_#\\_\\## | #/###_/_####${NC}   ${CYAN}  | |_) | ___   _ __.__  ___  | |  | |  __| | __     ${NC}"
+    echo -e "${FOREST}## #### # \\ #| /  #### ##/##${NC}    ${CYAN}|  _ < / _ \| '__/ _ \/ _ \\\`| |  | |/ _ \ |/ /     ${NC}"
+    echo -e "${FOREST} __#_--###\`  |{,###---###-~${NC}     ${CYAN}| |_) | (_) | |  | __/ (_| || |  | || __/   <        ${NC}"
+    echo -e "${FOREST}           \\ }{${NC}                 ${CYAN}|____/ \\___/|_|  \\___|\\__,_||_|  |_|\\___|_|\\_\\ ${NC}"
     echo -e "${FOREST}            }}{${NC}"
-    echo -e "${FOREST}            }}{${NC}                      ${GREEN} T R E E S C O U T   L O C A L   D E V${NC}"
+    echo -e "${FOREST}            }}{${NC}                     ${GREEN} T R E E S C O U T   E N T E R P R I S E     ${NC}"
     echo -e "${FOREST}            }}{${NC}"
     echo -e "${FOREST}      , -=-~{ .-^- _${NC}"
     echo -e "${FOREST}            \`${NC}"
@@ -211,8 +226,8 @@ load_or_create_config() {
     if [ -f "$CONFIG_FILE" ]; then
         log_success "Configuration file found: $CONFIG_FILE"
         
-        if [ -t 0 ]; then
-            read -rp "Use this configuration? [Y/n] " use_config
+        if [ -t 0 ] || [ -c /dev/tty ]; then
+            safe_read "Use this configuration? [Y/n] " use_config
             use_config=${use_config:-Y}
             
             if [[ "$use_config" =~ ^[Yy]$ ]]; then
@@ -231,8 +246,8 @@ load_or_create_config() {
     else
         log_info "No configuration file found"
         
-        if [ -t 0 ]; then
-            read -rp "Create configuration template? [y/N] " create_config
+        if [ -t 0 ] || [ -c /dev/tty ]; then
+            safe_read "Create configuration template? [y/N] " create_config
             
             if [[ "$create_config" =~ ^[Yy]$ ]]; then
                 create_config_template
@@ -298,7 +313,7 @@ interactive_menu() {
         echo -e "  ${COLOR_PRIMARY}[4]${NC} View Logs"
         echo -e "  ${COLOR_PRIMARY}[0]${NC} Exit"
         echo ""
-        read -p "  Enter Selection: " choice
+        safe_read "  Enter Selection: " choice
         
         case $choice in
             1) return 0 ;;
@@ -324,30 +339,30 @@ interactive_setup() {
     
     # Cloudflare configuration
     log_info "Cloudflare Configuration"
-    read -rp "Domain Name [devtickets.scotchmcdonald.dev]: " input_domain
+    safe_read "Domain Name [devtickets.scotchmcdonald.dev]: " input_domain
     DOMAIN_NAME="${input_domain:-devtickets.scotchmcdonald.dev}"
     
     while [ -z "${CF_TUNNEL_TOKEN:-}" ]; do
         echo -e "${YELLOW}Paste your Cloudflare Tunnel Token (starts with ey...):${NC}"
-        read -r CF_TUNNEL_TOKEN
+        safe_read "> " CF_TUNNEL_TOKEN
     done
     echo ""
     
     # Admin configuration
     log_info "Admin User"
-    read -rp "Admin Email [admin@scotchmcdonald.dev]: " input_email
+    safe_read "Admin Email [admin@scotchmcdonald.dev]: " input_email
     ADMIN_EMAIL="${input_email:-admin@scotchmcdonald.dev}"
-    read -rp "Admin Password [auto-generate]: " input_pass
+    safe_read "Admin Password [auto-generate]: " input_pass
     ADMIN_PASS="${input_pass:-$(openssl rand -hex 12)}"
     echo ""
     
     # Google OAuth (optional)
     log_info "Google OAuth (Optional)"
-    read -rp "Google Client ID (Enter to skip): " GOOGLE_CLIENT_ID
+    safe_read "Google Client ID (Enter to skip): " GOOGLE_CLIENT_ID
     if [ -n "$GOOGLE_CLIENT_ID" ]; then
-        read -rp "Google Client Secret: " GOOGLE_CLIENT_SECRET
-        read -rp "Google Admin Emails (comma separated): " GOOGLE_ADMIN_EMAILS
-        read -rp "Allowed Domains (comma separated): " GOOGLE_ALLOWED_DOMAINS
+        safe_read "Google Client Secret: " GOOGLE_CLIENT_SECRET
+        safe_read "Google Admin Emails (comma separated): " GOOGLE_ADMIN_EMAILS
+        safe_read "Allowed Domains (comma separated): " GOOGLE_ALLOWED_DOMAINS
     fi
     echo ""
     
@@ -403,11 +418,11 @@ check_existing_installation() {
     if [ -f "$existing_env" ]; then
         log_warning "Existing installation found at $DEFAULT_INSTALL_DIR"
         
-        if [ -t 0 ]; then
+        if [ -t 0 ] || [ -c /dev/tty ]; then
             echo ""
             echo "1) Reuse existing database (Keep data)"
             echo "2) Overwrite database (DESTROY ALL DATA)"
-            read -rp "Select [1-2]: " reuse_opt
+            safe_read "Select [1-2]: " reuse_opt
             
             case "$reuse_opt" in
                 2)
@@ -446,7 +461,7 @@ decommission_existing() {
         echo "  2) Nuke everything (fresh install, all data lost)"
         echo "  3) Cancel deployment"
         echo ""
-        read -p "Enter choice [1-3]: " choice
+        safe_read "Enter choice [1-3]: " choice
         
         case $choice in
             1)
@@ -457,7 +472,7 @@ decommission_existing() {
             2)
                 REUSE_DB=false
                 log_warning "Nuking everything - all data will be lost!"
-                read -p "Type 'yes' to confirm: " confirm
+                safe_read "Type 'yes' to confirm: " confirm
                 if [ "$confirm" = "yes" ]; then
                     log_info "Stopping and removing containers and volumes..."
                     docker compose down -v --remove-orphans 2>/dev/null || true
