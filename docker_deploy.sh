@@ -1290,6 +1290,19 @@ finalize_installation() {
     if [ ${#MODULES_TO_INSTALL[@]} -gt 0 ]; then
         log_info "Running module migrations..."
         sudo docker compose exec -T app php artisan module:migrate --all --force
+        
+        log_info "Seeding KnowledgeBase content..."
+        echo '
+$modules = Module::all();
+foreach($modules as $module) {
+    if (!$module->isEnabled()) continue;
+    $seeder = "Modules\\" . $module->getName() . "\\Database\\Seeders\\KnowledgeBaseSeeder";
+    if (class_exists($seeder)) {
+        echo "Seeding " . $module->getName() . "...\n";
+        Artisan::call("db:seed", ["--class" => $seeder, "--force" => true]);
+    }
+}
+' | sudo docker compose exec -T app php artisan tinker
     else
         log_info "No modules to migrate."
     fi

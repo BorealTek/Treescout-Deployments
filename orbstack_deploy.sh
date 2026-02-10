@@ -1165,6 +1165,19 @@ finalize_installation() {
     
     log_info "Running module migrations..."
     docker compose exec -T app php artisan module:migrate --force
+    
+    log_info "Seeding KnowledgeBase content..."
+    echo '
+$modules = Module::all();
+foreach($modules as $module) {
+    if (!$module->isEnabled()) continue;
+    $seeder = "Modules\\" . $module->getName() . "\\Database\\Seeders\\KnowledgeBaseSeeder";
+    if (class_exists($seeder)) {
+        echo "Seeding " . $module->getName() . "...\n";
+        Artisan::call("db:seed", ["--class" => $seeder, "--force" => true]);
+    }
+}
+' | docker compose exec -T app php artisan tinker
 
     log_info "Seeding themes..."
     docker compose exec -T app php artisan db:seed --class=ThemeSeeder --force
