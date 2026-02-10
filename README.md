@@ -10,7 +10,21 @@ Enterprise-grade deployment utilities for the FreeScout Helpdesk application.
 *   **Zero-Downtime Updates**: Integrated update scripts.
 *   **Secure by Default**: Generates SSL certs and handles secrets securely.
 
-## 🚀 Quick Start
+## ⚡ One-Line Install
+
+You can run the installers directly without cloning the repository manually. The script will generate a configuration file for you.
+
+**Production (Ubuntu/Linux):**
+```bash
+curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/docker_deploy.sh | sudo bash
+```
+
+**Local Dev (macOS/OrbStack):**
+```bash
+curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/orbstack_deploy.sh | bash
+```
+
+## 🚀 Manual Quick Start
 
 1.  **Clone this repository** to your target machine (or local dev machine).
 2.  **Configure**:
