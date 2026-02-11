@@ -243,102 +243,96 @@ load_or_create_config() {
         fi
         
         log_success "Configuration file found: $CONFIG_FILE"
+        # shellcheck disable=SC1090
+        source "$CONFIG_FILE"
         
-        if [ -t 0 ] || [ -c /dev/tty ]; then  # Check if stdin is a terminal or tty available
-            safe_read "Use this configuration? [Y/n] " use_config
-            use_config=${use_config:-Y}
-            
-            if [[ "$use_config" =~ ^[Yy]$ ]]; then
-                log_info "Loading configuration..."
-                # shellcheck disable=SC1090
-                source "$CONFIG_FILE"
-                INTERACTIVE=false
-                
-                # Ensure array exists if not defined in config
-                if [ -z "${MODULES_TO_INSTALL+x}" ]; then
-                    MODULES_TO_INSTALL=()
-                fi
-                return
-            fi
+        # Ensure array exists if not defined in config
+        if [ -z "${MODULES_TO_INSTALL+x}" ]; then
+            MODULES_TO_INSTALL=()
         fi
     else
-        log_info "No configuration file found"
-        
-        if [ -t 0 ] || [ -c /dev/tty ]; then
-            safe_read "Create configuration template? [y/N] " create_config
-            
-            if [[ "$create_config" =~ ^[Yy]$ ]]; then
-                create_config_template
-                log_success "Configuration template created at $CONFIG_FILE"
-                log_info "Please edit the file and run this script again"
-                exit 0
-            fi
-        fi
+        log_info "No configuration file found. Starting setup wizard..."
     fi
 }
 
-create_config_template() {
+save_current_config() {
+    log_info "Saving configuration to $CONFIG_FILE..."
+    
+    # Generate array string for MODULES_TO_INSTALL
+    local modules_str=""
+    if [ -n "${MODULES_TO_INSTALL+x}" ]; then
+        for mod in "${MODULES_TO_INSTALL[@]}"; do
+            modules_str+="    \"$mod\""$'\n'
+        done
+    fi
+
     cat > "$CONFIG_FILE" <<EOF
 #===============================================================================
 # FreeScout Deployment Configuration
+# Generated on $(date)
 #===============================================================================
 
 # Installation Settings
-GIT_REPO_URL="$DEFAULT_REPO"
-GIT_BRANCH="$DEFAULT_BRANCH"
-DEFAULT_INSTALL_DIR="$DEFAULT_INSTALL_DIR"
+GIT_REPO_URL="${GIT_REPO_URL:-$DEFAULT_REPO}"
+GIT_BRANCH="${GIT_BRANCH:-$DEFAULT_BRANCH}"
+DEFAULT_INSTALL_DIR="${DEFAULT_INSTALL_DIR:-/opt/freescout-docker}"
 
 # Network Settings
-DOMAIN_NAME="tickets.example.com"
-DOCKER_SUBNET="192.168.220.0/24"
+DOMAIN_NAME="${DOMAIN_NAME:-}"
+DOCKER_SUBNET="${DOCKER_SUBNET:-}"
 
 # Database Settings
-DB_ROOT_PASS="$(openssl rand -hex 16)"
-DB_USER="freescout"
-DB_PASS="$(openssl rand -hex 16)"
-DB_NAME="freescout"
+DB_ROOT_PASS="${DB_ROOT_PASS:-}"
+DB_USER="${DB_USER:-freescout}"
+DB_PASS="${DB_PASS:-}"
+DB_NAME="${DB_NAME:-freescout}"
 
 # Admin User
-ADMIN_EMAIL="admin@example.com"
-ADMIN_PASS="$(openssl rand -hex 12)"
+ADMIN_EMAIL="${ADMIN_EMAIL:-}"
+ADMIN_PASS="${ADMIN_PASS:-}"
+
+# Additional Users (Optional)
+AGENT_EMAIL="${AGENT_EMAIL:-}"
+AGENT_PASS="${AGENT_PASS:-}"
+FINANCE_EMAIL="${FINANCE_EMAIL:-}"
+FINANCE_PASS="${FINANCE_PASS:-}"
+REPORTER_EMAIL="${REPORTER_EMAIL:-}"
+REPORTER_PASS="${REPORTER_PASS:-}"
 
 # Google OAuth (Optional)
-GOOGLE_CLIENT_ID=""
-GOOGLE_CLIENT_SECRET=""
-GOOGLE_ADMIN_EMAILS=""
-GOOGLE_ALLOWED_DOMAINS=""
+GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
+GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
+GOOGLE_ADMIN_EMAILS="${GOOGLE_ADMIN_EMAILS:-}"
+GOOGLE_ALLOWED_DOMAINS="${GOOGLE_ALLOWED_DOMAINS:-}"
 
 # Mailbox Auto-Provisioning (Optional)
-MAILBOX_EMAIL=""
-MAILBOX_NAME=""
-MAILBOX_IMAP_HOST=""
-MAILBOX_IMAP_PORT="993"
-MAILBOX_IMAP_USER=""
-MAILBOX_IMAP_PASS=""
-MAILBOX_SMTP_HOST=""
-MAILBOX_SMTP_PORT="587"
-MAILBOX_SMTP_USER=""
-MAILBOX_SMTP_PASS=""
+MAILBOX_EMAIL="${MAILBOX_EMAIL:-}"
+MAILBOX_NAME="${MAILBOX_NAME:-}"
+MAILBOX_IMAP_HOST="${MAILBOX_IMAP_HOST:-}"
+MAILBOX_IMAP_PORT="${MAILBOX_IMAP_PORT:-993}"
+MAILBOX_IMAP_USER="${MAILBOX_IMAP_USER:-}"
+MAILBOX_IMAP_PASS="${MAILBOX_IMAP_PASS:-}"
+MAILBOX_SMTP_HOST="${MAILBOX_SMTP_HOST:-}"
+MAILBOX_SMTP_PORT="${MAILBOX_SMTP_PORT:-587}"
+MAILBOX_SMTP_USER="${MAILBOX_SMTP_USER:-}"
+MAILBOX_SMTP_PASS="${MAILBOX_SMTP_PASS:-}"
 
-# Sample Data Seeding (Optional)
-SEED_SAMPLE_DATA=false
+# Sample Data Seeding
+SEED_SAMPLE_DATA=${SEED_SAMPLE_DATA:-false}
 
-# Define your access tokens (optional)
-export REPO_TOKEN="ghp_your_token_here"
+# Define your access tokens
+export REPO_TOKEN="${REPO_TOKEN:-}"
 
 # Configure modules to install
-# Format: "ModuleName|RepoURL|TokenEnvVarName"
 MODULES_TO_INSTALL=(
-    "Crm|https://github.com/Example/Crm.git|REPO_TOKEN"
-    "PIB|https://github.com/Example/PIB.git|REPO_TOKEN"
-    "AssetManagement|https://github.com/Example/AssetManagement.git|REPO_TOKEN"
-)
+${modules_str})
 
 EOF
     
     if [ -n "${SUDO_USER:-}" ]; then
         chown "$SUDO_USER:$(id -g "$SUDO_USER")" "$CONFIG_FILE"
     fi
+    log_success "Configuration saved."
 }
 
 
@@ -386,36 +380,97 @@ interactive_setup() {
         interactive_menu
     fi
 
+    # Check for existing config to allow skipping detailed setup
+    if [ -n "${DOMAIN_NAME:-}" ] && [ -n "${DOCKER_SUBNET:-}" ]; then
+        echo ""
+        log_info "Configuration loaded from $CONFIG_FILE"
+        echo -e "  Domain: ${GREEN}$DOMAIN_NAME${NC}"
+        echo -e "  Subnet: ${GREEN}$DOCKER_SUBNET${NC}"
+        safe_read "Use these settings? [Y/n] " use_defaults
+        if [[ "${use_defaults:-Y}" =~ ^[Yy]$ ]]; then
+             # Check for token
+             if [ -z "${REPO_TOKEN:-}" ]; then
+                 safe_read "Enter GitHub Token (for modules): " REPO_TOKEN
+                 export REPO_TOKEN
+                 save_current_config
+             fi
+             return
+        fi
+    fi
+
     log_step "Interactive Setup"
     
     # Repository configuration
-    echo -e "Default Repository: ${YELLOW}$DEFAULT_REPO${NC}"
+    local current_repo="${GIT_REPO_URL:-$DEFAULT_REPO}"
+    echo -e "Repository URL: ${YELLOW}$current_repo${NC}"
     safe_read "Press ENTER to confirm, or paste a new URL: " input_repo
-    GIT_REPO_URL="${input_repo:-$DEFAULT_REPO}"
+    GIT_REPO_URL="${input_repo:-$current_repo}"
     
-    echo -e "Default Branch: ${YELLOW}$DEFAULT_BRANCH${NC}"
+    local current_branch="${GIT_BRANCH:-$DEFAULT_BRANCH}"
+    echo -e "Branch: ${YELLOW}$current_branch${NC}"
     safe_read "Press ENTER to confirm, or type a new branch: " input_branch
-    GIT_BRANCH="${input_branch:-$DEFAULT_BRANCH}"
+    GIT_BRANCH="${input_branch:-$current_branch}"
     echo ""
     
     # Network configuration
     log_info "Network Configuration"
-    while [ -z "${DOMAIN_NAME:-}" ]; do
-        safe_read "Domain Name: " DOMAIN_NAME
-    done
+    local current_domain="${DOMAIN_NAME:-}" 
+    if [ -n "$current_domain" ]; then
+        echo -e "Domain Name: ${YELLOW}$current_domain${NC}"
+        safe_read "Press ENTER to confirm, or type new domain: " input_domain
+        DOMAIN_NAME="${input_domain:-$current_domain}"
+    else
+        while [ -z "${DOMAIN_NAME:-}" ]; do
+            safe_read "Domain Name: " DOMAIN_NAME
+        done
+    fi
     
-    while [ -z "${DOCKER_SUBNET:-}" ]; do
-        safe_read "Docker Subnet (CIDR, e.g. 192.168.220.0/24): " DOCKER_SUBNET
-    done
+    local current_subnet="${DOCKER_SUBNET:-}"
+    if [ -n "$current_subnet" ]; then
+         echo -e "Docker Subnet: ${YELLOW}$current_subnet${NC}"
+         safe_read "Press ENTER to confirm, or type new: " input_subnet
+         DOCKER_SUBNET="${input_subnet:-$current_subnet}"
+    else
+        while [ -z "${DOCKER_SUBNET:-}" ]; do
+            safe_read "Docker Subnet (CIDR, e.g. 192.168.220.0/24): " DOCKER_SUBNET
+        done
+    fi
+    echo ""
+
+    # Access Tokens
+    log_info "Authentication"
+    local current_token="${REPO_TOKEN:-}"
+    if [ -n "$current_token" ]; then
+        echo -e "Repo Token: ${YELLOW}********${NC}"
+    else
+        echo -e "Repo Token: ${YELLOW}<not set>${NC}"
+    fi
+    safe_read "Press ENTER to keep, or paste new token (required for modules): " input_token
+    if [ -n "$input_token" ]; then
+        REPO_TOKEN="$input_token"
+    fi
+    export REPO_TOKEN="${REPO_TOKEN:-}"
     echo ""
     
     # Google OAuth (optional)
     log_info "Google OAuth (Optional)"
-    safe_read "Google Client ID (Enter to skip): " GOOGLE_CLIENT_ID
+    local current_client_id="${GOOGLE_CLIENT_ID:-}"
+    echo -e "Google Client ID: ${YELLOW}${current_client_id:-<not set>}${NC}"
+    safe_read "Enter Client ID (or ENTER to skip/keep): " input_client_id
+    
+    if [ -n "$input_client_id" ]; then
+         GOOGLE_CLIENT_ID="$input_client_id"
+    fi
+    
     if [ -n "$GOOGLE_CLIENT_ID" ]; then
-        safe_read "Google Client Secret: " GOOGLE_CLIENT_SECRET
-        safe_read "Google Admin Emails (comma separated): " GOOGLE_ADMIN_EMAILS
-        safe_read "Allowed Domains (comma separated): " GOOGLE_ALLOWED_DOMAINS
+        safe_read "Google Client Secret [${GOOGLE_CLIENT_SECRET:0:5}...]: " input_secret
+        GOOGLE_CLIENT_SECRET="${input_secret:-$GOOGLE_CLIENT_SECRET}"
+        
+        safe_read "Google Admin Emails [${GOOGLE_ADMIN_EMAILS}]: " input_emails
+        GOOGLE_ADMIN_EMAILS="${input_emails:-$GOOGLE_ADMIN_EMAILS}"
+        
+        safe_read "Allowed Domains [${GOOGLE_ALLOWED_DOMAINS}]: " input_domains
+        GOOGLE_ALLOWED_DOMAINS="${input_domains:-$GOOGLE_ALLOWED_DOMAINS}"
     fi
     echo ""
     
@@ -425,13 +480,26 @@ interactive_setup() {
         log_warning "WARNING: Reusing existing database"
         log_warning "Seeding may cause conflicts or duplicates"
     fi
-    safe_read "Seed sample data (Mailboxes, Users, Conversations)? [y/N] " input_seed
-    if [[ "$input_seed" =~ ^[Yy]$ ]]; then
+    
+    local default_seed="N"
+    if [ "$SEED_SAMPLE_DATA" = true ]; then default_seed="Y"; fi
+    
+    safe_read "Seed sample data (Mailboxes, Users, Conversations)? [y/N] (Current: $default_seed) " input_seed
+    if [ -z "$input_seed" ]; then
+         : # Keep current
+    elif [[ "$input_seed" =~ ^[Yy]$ ]]; then
         SEED_SAMPLE_DATA=true
     else
         SEED_SAMPLE_DATA=false
     fi
     echo ""
+
+    # Save Config
+    safe_read "Save this configuration to $CONFIG_FILE? [Y/n] " save_opt
+    save_opt="${save_opt:-Y}"
+    if [[ "$save_opt" =~ ^[Yy]$ ]]; then
+        save_current_config
+    fi
     
     # Configuration summary
     echo "────────────────────────────────────────────────────────────"
