@@ -513,8 +513,8 @@ FROM serversideup/php:8.2-fpm-nginx
 
 USER root
 
-# Install system dependencies and Node.js 24.x LTS
-RUN apt-get update && apt-get install -y gnupg git curl ca-certificates && \
+# Install system dependencies, cron, and Node.js 24.x LTS
+RUN apt-get update && apt-get install -y gnupg git curl ca-certificates cron && \
     # Install Docker CLI and Compose
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
@@ -530,7 +530,7 @@ RUN apt-get update && apt-get install -y gnupg git curl ca-certificates && \
         -o /usr/local/bin/install-php-extensions \
         https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions && \
     chmod +x /usr/local/bin/install-php-extensions && \
-    install-php-extensions imap gmp soap intl bcmath gd && \
+    install-php-extensions imap gmp soap intl bcmath gd redis && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -797,6 +797,12 @@ services:
     environment:
       - PHP_OPCACHE_ENABLE=1
       - ENABLE_CRON=true
+    command: >
+      /bin/sh -c '
+      echo "* * * * * cd /var/www/html && php artisan schedule:run >> /var/log/cron.log 2>&1" | crontab - &&
+      echo "Starting cron..." &&
+      cron -f
+      '
     volumes:
       - ./src:/var/www/html
     depends_on:
@@ -870,7 +876,7 @@ echo "🗄️  Running migrations..."
 docker compose exec -T app php artisan migrate --force
 
 echo "📦 Installing dependencies..."
-docker compose exec -T -u root app composer install --no-dev --optimize-autoloader
+docker compose exec -T -u root app composer update --no-dev --optimize-autoloader
 docker compose exec -T -u root app npm install
 docker compose exec -T -u root app npm run build
 

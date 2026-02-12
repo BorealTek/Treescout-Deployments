@@ -661,8 +661,8 @@ FROM serversideup/php:8.2-fpm-nginx
 
 USER root
 
-# Install system dependencies and Node.js 24.x LTS
-RUN apt-get update && apt-get install -y gnupg curl ca-certificates && \
+# Install system dependencies, cron, Node.js 22.x, and utilities for Composer
+RUN apt-get update && apt-get install -y gnupg curl ca-certificates unzip git cron && \
     # Install Docker CLI and Compose
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
@@ -678,7 +678,7 @@ RUN apt-get update && apt-get install -y gnupg curl ca-certificates && \
         -o /usr/local/bin/install-php-extensions \
         https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions && \
     chmod +x /usr/local/bin/install-php-extensions && \
-    install-php-extensions imap gmp soap intl bcmath gd && \
+    install-php-extensions imap gmp soap intl bcmath gd redis && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -933,12 +933,33 @@ services:
     restart: unless-stopped
     command: >
       /bin/sh -c '
-      echo "Installing cron..." &&
-      apt-get update && apt-get install -y cron &&
       echo "* * * * * cd /var/www/html && php artisan schedule:run >> /var/log/cron.log 2>&1" | crontab - &&
-      echo "Cron installed. Starting cron..." &&
+      echo "Starting cron..." &&
       cron -f
       '
+    volumes:
+      - ./src:/var/www/html
+    depends_on:
+      - app
+      - db
+      - redis
+    networks:
+      - fs-net
+
+  reverb:
+    image: freescout-app
+    restart: unless-stopped
+    command: >
+      sh -c '
+      while [ ! -f /var/www/html/vendor/autoload.php ]; do
+        echo "Waiting for composer dependencies to be installed...";
+        sleep 5;
+      done;
+      echo "Dependencies ready, starting Reverb...";
+      php artisan reverb:start --host="0.0.0.0" --port=8080
+      '
+    environment:
+      - PHP_OPCACHE_ENABLE=1
     volumes:
       - ./src:/var/www/html
     depends_on:
@@ -1008,7 +1029,7 @@ echo "🗄️  Running migrations..."
 sudo docker compose exec -T app php artisan migrate --force
 
 echo "📦 Installing dependencies..."
-sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer install --no-dev --optimize-autoloader
+sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer update --no-dev --optimize-autoloader
 sudo docker compose exec -T app npm install
 sudo docker compose exec -T app npm run build
 
@@ -1321,12 +1342,20 @@ install_dependencies() {
     
     if [ "${SEED_SAMPLE_DATA:-false}" = true ]; then
         log_info "Installing Composer dependencies (including dev for seeding)..."
-        sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer install --optimize-autoloader
+        if [ ${#MODULES_TO_INSTALL[@]} -gt 0 ]; then
+            sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer update --optimize-autoloader
+        else
+            sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer install --optimize-autoloader
+        fi
     else
         log_info "Installing Composer dependencies..."
-        sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer install --no-dev --optimize-autoloader
+        if [ ${#MODULES_TO_INSTALL[@]} -gt 0 ]; then
+             sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer update --no-dev --optimize-autoloader
+        else
+             sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer install --no-dev --optimize-autoloader
+        fi
     fi
-    
+     
     log_info "Installing NPM dependencies..."
     sudo docker compose exec -T app npm install
     
