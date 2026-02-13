@@ -301,9 +301,20 @@ export REPO_TOKEN="ghp_your_token_here"
 # Configure modules to install
 # Format: "ModuleName|RepoURL|TokenEnvVarName"
 MODULES_TO_INSTALL=(
-    "Crm|https://github.com/Example/Crm.git|REPO_TOKEN"
-    "PIB|https://github.com/Example/PIB.git|REPO_TOKEN"
-    "AssetManagement|https://github.com/Example/AssetManagement.git|REPO_TOKEN"
+    "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
+    "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
+    "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+    "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
+    "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+    "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
+    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
+    "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
+    "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
+    "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
+    "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
 EOF
 }
@@ -516,12 +527,12 @@ generate_dockerfile() {
     log_step "Generating Dockerfile"
     
     cat > Dockerfile <<'EOF'
-FROM serversideup/php:8.2-fpm-nginx
+FROM serversideup/php:8.3-fpm-nginx
 
 USER root
 
-# Install system dependencies, cron, and Node.js 24.x LTS
-RUN apt-get update && apt-get install -y gnupg git curl ca-certificates cron && \
+# Install system dependencies, cron, MySQL Client, and Node.js 24.x LTS
+RUN apt-get update && apt-get install -y gnupg git curl ca-certificates cron default-mysql-client && \
     # Install Docker CLI and Compose
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \

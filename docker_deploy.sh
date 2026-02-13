@@ -53,6 +53,24 @@ REUSE_DB=true  # Optimistic default - decommission_existing will handle graceful
 ADMIN_PASS_PRESERVED=false
 CLEANUP_NEEDED=false
 
+# Default Modules
+MODULES_TO_INSTALL=(
+    "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
+    "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
+    "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+    "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
+    "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+    "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
+    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
+    "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
+    "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
+    "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
+    "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
+)
+
 #===============================================================================
 # UTILITY FUNCTIONS
 #===============================================================================
@@ -558,7 +576,7 @@ check_existing_installation() {
             echo ""
             echo "1) Reuse existing database (Keep data)"
             echo "2) Overwrite database (DESTROY ALL DATA)"
-            read -rp "Select [1-2]: " reuse_opt
+            read -rp "Select [1-2]: " reuse_opt || true
             
             case "$reuse_opt" in
                 2)
@@ -569,9 +587,11 @@ check_existing_installation() {
                     REUSE_DB=true
                     ;;
             esac
+            EXISTING_DECISION_MADE=true
         else
             # Non-interactive: default to safe option
             REUSE_DB=true
+            EXISTING_DECISION_MADE=true
         fi
         
         if [ "$REUSE_DB" = true ]; then
@@ -622,44 +642,46 @@ decommission_existing() {
         
         # Always prompt for what to do with existing deployment
         log_warning "Existing deployment detected!"
-        echo ""
-        echo -e "${YELLOW}What would you like to do?${NC}"
-        echo "  1) Reuse existing data (keep database and volumes)"
-        echo "  2) Nuke everything (fresh install, all data lost)"
-        echo "  3) Cancel deployment"
-        echo ""
-        safe_read "Enter choice [1-3]: " choice
         
-        case $choice in
-            1)
-                REUSE_DB=true
-                log_info "Reusing existing data - stopping containers only..."
-                sudo docker compose down 2>/dev/null || true
-                ;;
-            2)
-                log_warning "Nuking everything - all data will be lost!"
+        if [ "${EXISTING_DECISION_MADE:-false}" = true ]; then
+            log_info "Using previous selection (Reuse Database: $REUSE_DB)"
+        else
+            echo ""
+            echo -e "${YELLOW}What would you like to do?${NC}"
+            echo "  1) Reuse existing data (keep database and volumes)"
+            echo "  2) Nuke everything (fresh install, all data lost)"
+            echo "  3) Cancel deployment"
+            echo ""
+            safe_read "Enter choice [1-3]: " choice
+            
+            case $choice in
+                1) REUSE_DB=true ;;
+                2) REUSE_DB=false ;;
+                3) exit 0 ;;
+                *) REUSE_DB=true ;;
+            esac
+        fi
+        
+        if [ "$REUSE_DB" = true ]; then
+            log_info "Reusing existing data - stopping containers only..."
+            sudo docker compose down 2>/dev/null || true
+        else
+            log_warning "Nuking everything - all data will be lost!"
+            
+            if [ "${EXISTING_DECISION_MADE:-false}" = false ]; then
                 safe_read "Type 'yes' to confirm: " confirm
-                if [ "$confirm" = "yes" ]; then
-                    REUSE_DB=false
-                    log_info "Stopping and removing containers and volumes..."
-                    sudo docker compose down -v 2>/dev/null || true
-                    log_info "Removing source code directory..."
-                    sudo rm -rf src
-                    log_success "Everything nuked"
-                else
-                    log_error "Nuke cancelled"
-                    exit 1
+                if [ "$confirm" != "yes" ]; then
+                     log_error "Aborted by user."
+                     exit 1
                 fi
-                ;;
-            3)
-                log_info "Deployment cancelled by user"
-                exit 0
-                ;;
-            *)
-                log_error "Invalid choice"
-                exit 1
-                ;;
-        esac
+            fi
+
+            log_info "Stopping and removing containers and volumes..."
+            sudo docker compose down -v 2>/dev/null || true
+            log_info "Removing source code directory..."
+            sudo rm -rf src
+            log_success "Everything nuked"
+        fi
         
         log_info "Pruning unused networks..."
         sudo docker network prune -f >/dev/null 2>&1 || true
@@ -688,12 +710,12 @@ generate_dockerfile() {
     log_step "Generating Dockerfile"
     
     cat > Dockerfile <<'EOF'
-FROM serversideup/php:8.2-fpm-nginx
+FROM serversideup/php:8.3-fpm-nginx
 
 USER root
 
-# Install system dependencies, cron, Node.js 22.x, and utilities for Composer
-RUN apt-get update && apt-get install -y gnupg curl ca-certificates unzip git cron && \
+# Install system dependencies, cron, Node.js 22.x, MySQL client, and utilities for Composer
+RUN apt-get update && apt-get install -y gnupg curl ca-certificates unzip git cron default-mysql-client && \
     # Install Docker CLI and Compose
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
