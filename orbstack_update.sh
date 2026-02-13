@@ -277,7 +277,7 @@ run_migrations() {
     docker compose exec -T app php artisan migrate --force
     
     log_info "Running module migrations..."
-    docker compose exec -T app php artisan module:migrate --force
+    docker compose exec -T app php artisan module:migrate --all --force
     
     log_info "Seeding KnowledgeBase content..."
     echo '

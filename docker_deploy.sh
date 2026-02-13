@@ -718,7 +718,7 @@ USER root
 RUN apt-get update && apt-get install -y gnupg curl ca-certificates unzip git cron default-mysql-client && \
     # Disable SSL for MySQL Client (Fixes ERROR 2026)
     mkdir -p /etc/mysql/conf.d && \
-    echo "[client]\nssl=0" > /etc/mysql/conf.d/disable_ssl.cnf && \
+    printf "[client]\nssl=0\nskip-ssl\n" > /etc/mysql/conf.d/disable_ssl.cnf && \
     # Install Docker CLI and Compose
     install -m 0755 -d /etc/apt/keyrings && \
     curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
