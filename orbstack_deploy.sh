@@ -24,9 +24,9 @@ IFS=$'\n\t'
 
 readonly SCRIPT_VERSION="2.0.0"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly DEFAULT_REPO="https://github.com/Scotchmcdonald/freescout.git"
-readonly DEFAULT_BRANCH="laravel-11-foundation"
-readonly DEFAULT_INSTALL_DIR="$HOME/borealtek-ticketing"
+DEFAULT_REPO="https://github.com/Scotchmcdonald/freescout.git"
+DEFAULT_BRANCH="laravel-11-foundation"
+DEFAULT_INSTALL_DIR="$HOME/borealtek-ticketing"
 readonly CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
 
 # Boreal Theme Colors
@@ -234,6 +234,11 @@ load_or_create_config() {
                 log_info "Loading configuration..."
                 # shellcheck disable=SC1090
                 source "$CONFIG_FILE"
+
+                # Sync config variables to internal variables
+                if [ -n "${GIT_REPO_URL:-}" ]; then DEFAULT_REPO="$GIT_REPO_URL"; fi
+                if [ -n "${GIT_BRANCH:-}" ]; then DEFAULT_BRANCH="$GIT_BRANCH"; fi
+
                 INTERACTIVE=false
                 
                 # Ensure array exists if not defined in config
@@ -307,7 +312,8 @@ EOF
 interactive_menu() {
     local choice
     while true; do
-        show_banner
+        # show_banner - removed to prevent flickering
+        echo ""
         echo -e "  ${COLOR_PRIMARY}[1]${NC} Deploy to OrbStack (Fresh)"
         echo -e "  ${COLOR_PRIMARY}[2]${NC} Update Existing/Redeploy"
         echo -e "  ${COLOR_PRIMARY}[4]${NC} View Logs"
@@ -330,11 +336,6 @@ interactive_menu() {
 }
 
 interactive_setup() {
-     # If script provided with args, skip menu
-    if [ "$INTERACTIVE" = true ]; then
-        interactive_menu
-    fi
-
     log_step "Interactive Setup"
     
     # Cloudflare configuration
@@ -380,7 +381,7 @@ interactive_setup() {
     fi
     echo "────────────────────────────────────────────────────────────"
     echo ""
-    read -rp "Press ENTER to start deployment (or Ctrl+C to cancel)..."
+    read -rp "Press ENTER to start deployment (or Ctrl+C to cancel)..." _ignore
 }
 
 #===============================================================================
@@ -433,9 +434,11 @@ check_existing_installation() {
                     REUSE_DB=true
                     ;;
             esac
+            EXISTING_DECISION_MADE=true
         else
             # Non-interactive: default to safe option
             REUSE_DB=true
+            EXISTING_DECISION_MADE=true
         fi
         
         if [ "$REUSE_DB" = true ]; then
@@ -455,44 +458,48 @@ decommission_existing() {
         cd "$DEFAULT_INSTALL_DIR"
         
         log_warning "Existing deployment detected!"
-        echo ""
-        echo -e "${YELLOW}What would you like to do?${NC}"
-        echo "  1) Reuse existing data (keep database and volumes)"
-        echo "  2) Nuke everything (fresh install, all data lost)"
-        echo "  3) Cancel deployment"
-        echo ""
-        safe_read "Enter choice [1-3]: " choice
         
-        case $choice in
-            1)
-                REUSE_DB=true
-                log_info "Reusing existing data - stopping containers only..."
-                docker compose down 2>/dev/null || true
-                ;;
-            2)
-                REUSE_DB=false
-                log_warning "Nuking everything - all data will be lost!"
+        if [ "${EXISTING_DECISION_MADE:-false}" = true ]; then
+            log_info "Using previous selection (Reuse Database: $REUSE_DB)"
+        else
+            echo ""
+            echo -e "${YELLOW}What would you like to do?${NC}"
+            echo "  1) Reuse existing data (keep database and volumes)"
+            echo "  2) Nuke everything (fresh install, all data lost)"
+            echo "  3) Cancel deployment"
+            echo ""
+            safe_read "Enter choice [1-3]: " choice
+            
+            case $choice in
+                1) REUSE_DB=true ;;
+                2) REUSE_DB=false ;;
+                3) exit 0 ;;
+                *) REUSE_DB=true ;;
+            esac
+        fi
+        
+        if [ "$REUSE_DB" = true ]; then
+             log_info "Reusing existing data - stopping containers only..."
+             docker compose down 2>/dev/null || true
+        else
+             log_warning "Nuking everything - all data will be lost!"
+             # If decision was made previously and it was Nuke, we should doubly confirm? 
+             # No, assume they meant it. Or auto-confirm.
+             if [ "${EXISTING_DECISION_MADE:-false}" = false ]; then
                 safe_read "Type 'yes' to confirm: " confirm
-                if [ "$confirm" = "yes" ]; then
-                    log_info "Stopping and removing containers and volumes..."
-                    docker compose down -v --remove-orphans 2>/dev/null || true
-                    log_info "Removing source code directory..."
-                    rm -rf src
-                    log_success "Everything nuked"
-                else
-                    log_error "Nuke cancelled"
+                if [ "$confirm" != "yes" ]; then
+                    log_error "Aborted by user."
                     exit 1
                 fi
-                ;;
-            3)
-                log_info "Deployment cancelled by user"
-                exit 0
-                ;;
-            *)
-                log_error "Invalid choice"
-                exit 1
-                ;;
-        esac
+             fi
+             
+             log_info "Removing containers and volumes..."
+             docker compose down -v --remove-orphans 2>/dev/null || true
+             
+             log_info "Removing source code directory..."
+             rm -rf src
+             log_success "Everything nuked"
+        fi
     fi
 }
 
@@ -1235,7 +1242,16 @@ show_completion_message() {
 
 main() {
     show_banner
-    preflight_checks
+    if [ "$INTERACTIVE" = true ]; then
+        # Check if pre-flight checks should be visible before menu? 
+        # User requested splashscreen FIRST.
+        interactive_menu
+        # After menu, run checks
+        preflight_checks
+    else
+        preflight_checks
+    fi
+
     load_or_create_config
     
     # Set defaults
@@ -1252,6 +1268,8 @@ main() {
         interactive_setup
     fi
     
+    log_info "Validating configuration..."
+
     # Validate required variables
     validate_required_var "DOMAIN_NAME" "${DOMAIN_NAME:-}"
     validate_required_var "CF_TUNNEL_TOKEN" "${CF_TUNNEL_TOKEN:-}"

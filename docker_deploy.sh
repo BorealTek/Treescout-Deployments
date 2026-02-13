@@ -21,8 +21,8 @@ IFS=$'\n\t'
 
 readonly SCRIPT_VERSION="2.0.0"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly DEFAULT_REPO="https://github.com/Scotchmcdonald/freescout.git"
-readonly DEFAULT_BRANCH="laravel-11-foundation"
+DEFAULT_REPO="https://github.com/Scotchmcdonald/freescout.git"
+DEFAULT_BRANCH="laravel-11-foundation"
 DEFAULT_INSTALL_DIR="/opt/freescout-docker"
 readonly CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
 
@@ -116,7 +116,8 @@ safe_read() {
     # $1: prompt
     # $2: variable name
     if [ -t 0 ]; then
-        read -rp "$1" "$2"
+        # Ensure read has a variable to avoid exit code 1 on empty input in strict mode
+        read -rp "$1" "$2" || true
     elif [ -c /dev/tty ]; then
         # Prompt to stderr
         echo -ne "$1" >&2
@@ -245,6 +246,10 @@ load_or_create_config() {
         log_success "Configuration file found: $CONFIG_FILE"
         # shellcheck disable=SC1090
         source "$CONFIG_FILE"
+
+        # Sync config variables to internal variables
+        if [ -n "${GIT_REPO_URL:-}" ]; then DEFAULT_REPO="$GIT_REPO_URL"; fi
+        if [ -n "${GIT_BRANCH:-}" ]; then DEFAULT_BRANCH="$GIT_BRANCH"; fi
         
         # Ensure array exists if not defined in config
         if [ -z "${MODULES_TO_INSTALL+x}" ]; then
@@ -253,6 +258,32 @@ load_or_create_config() {
     else
         log_info "No configuration file found. Starting setup wizard..."
     fi
+}
+
+interactive_menu() {
+    local choice
+    while true; do
+        # show_banner - removed to prevent flickering
+        echo ""
+        echo -e "  ${COLOR_PRIMARY}[1]${NC} Deploy to Docker (Fresh)"
+        echo -e "  ${COLOR_PRIMARY}[2]${NC} Update Existing/Redeploy"
+        echo -e "  ${COLOR_PRIMARY}[4]${NC} View Logs"
+        echo -e "  ${COLOR_PRIMARY}[0]${NC} Exit"
+        echo ""
+        safe_read "  Enter Selection: " choice
+        
+        case $choice in
+            1) return 0 ;;
+            2) return 0 ;;
+            4)
+                if command_exists docker; then
+                     sudo docker compose logs -f app
+                fi
+                ;;
+            0) exit 0 ;;
+            *) log_error "Invalid selection" ; sleep 1 ;;
+        esac
+    done
 }
 
 save_current_config() {
@@ -1474,6 +1505,17 @@ show_completion_message() {
 
 main() {
     show_banner
+    if [ "$INTERACTIVE" = true ]; then
+        if [ -n "${1:-}" ]; then
+            # Arguments passed, skip menu
+            GIT_REPO_URL=$1
+            GIT_BRANCH=${2:-$DEFAULT_BRANCH}
+            log_info "Arguments detected, skipping interactive menu..."
+        else
+            interactive_menu
+        fi
+    fi
+
     preflight_checks
     load_or_create_config
     
@@ -1488,10 +1530,7 @@ main() {
     check_existing_installation
     
     if [ "$INTERACTIVE" = true ]; then
-        if [ -n "${1:-}" ]; then
-            GIT_REPO_URL=$1
-            GIT_BRANCH=${2:-$DEFAULT_BRANCH}
-        else
+        if [ -z "${1:-}" ]; then
             interactive_setup
         fi
     fi
