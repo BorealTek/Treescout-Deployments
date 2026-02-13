@@ -548,7 +548,7 @@ RUN apt-get update && apt-get install -y gnupg git curl ca-certificates cron def
         -o /usr/local/bin/install-php-extensions \
         https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions && \
     chmod +x /usr/local/bin/install-php-extensions && \
-    install-php-extensions imap gmp soap intl bcmath gd redis && \
+    install-php-extensions imap gmp soap intl bcmath gd redis sockets pcntl zip && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -759,7 +759,8 @@ services:
   db:
     image: mariadb:10.6
     restart: unless-stopped
-    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --innodb-file-per-table=1 --skip-innodb-read-only-compressed
+    # Use mariadbd with SSL explicitly disabled to fix "SSL is required" error
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --innodb-file-per-table=1 --skip-innodb-read-only-compressed --skip-ssl
     environment:
       MARIADB_ROOT_PASSWORD: \${DB_ROOT_PASSWORD}
       MARIADB_DATABASE: \${DB_DATABASE}
