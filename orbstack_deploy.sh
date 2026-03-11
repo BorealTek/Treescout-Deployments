@@ -1451,14 +1451,9 @@ finalize_installation() {
 
     # ── Seeding ───────────────────────────────────────────────────────────────
     log_info "Seeding modules..."
-    echo '
-$modules = Module::all();
-foreach($modules as $module) {
-    if (!$module->isEnabled()) continue;
-    echo "Seeding " . $module->getName() . "...\n";
-    Artisan::call("module:seed", ["module" => $module->getName(), "--force" => true]);
-}
-' | docker compose exec -T app php artisan tinker
+    # Use nwidart's native --all flag to seed every enabled module.
+    # This is more reliable than piping PHP into tinker.
+    docker compose exec -T app php artisan module:seed --all --force || true
 
     run_artisan_step "Seeding themes..." db:seed --class=ThemeSeeder --force
 
