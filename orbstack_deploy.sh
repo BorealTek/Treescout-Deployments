@@ -618,27 +618,23 @@ EOF
 }
 
 generate_nginx_config() {
-    log_step "Generating Nginx Configuration (HTTPS + WebSocket)"
+    log_step "Generating Nginx Configuration (HTTP for tunnel + HTTPS for local access)"
     
     cat > nginx/default.conf <<'EOF'
 upstream reverb_backend {
     server reverb:8080;
 }
 
+# Plain HTTP on port 8080 — used by the Cloudflare tunnel.
+# The tunnel itself handles TLS between the browser and Cloudflare's edge;
+# no SSL is needed (or desired) between cloudflared and this origin.
 server {
-    listen 8080 ssl http2 default_server;
+    listen 8080 default_server;
     server_name _;
     root /var/www/html/public;
     index index.php index.html;
     client_max_body_size 20M;
-    
-    # SSL Configuration
-    ssl_certificate /etc/nginx/ssl/cert.pem;
-    ssl_certificate_key /etc/nginx/ssl/key.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
-    
+
     # Proxy WebSocket requests to Reverb container
     location /app/ {
         proxy_pass http://reverb_backend;
@@ -651,12 +647,74 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 86400;
     }
-    
+
     # PHP Application
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }
-    
+
+    location ~ \.php$ {
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+        # Cloudflare always delivers HTTPS to users; mark PHP as HTTPS.
+        fastcgi_param HTTPS on;
+    }
+
+    # Static assets
+    location ~* ^/storage/attachment/ {
+        expires 1M;
+        access_log off;
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~* ^/(?:css|js)/.*\.(?:css|js)$ {
+        expires 2d;
+        access_log off;
+        add_header Cache-Control "public, must-revalidate";
+    }
+
+    # Security
+    location ~ /\. {
+        deny all;
+    }
+}
+
+# HTTPS on port 8443 — emergency local LAN access only (accept the cert warning).
+# Not used by Cloudflare tunnel.
+server {
+    listen 8443 ssl;
+    http2 on;
+    server_name _;
+    root /var/www/html/public;
+    index index.php index.html;
+    client_max_body_size 20M;
+
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    location /app/ {
+        proxy_pass http://reverb_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
     location ~ \.php$ {
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
         fastcgi_pass 127.0.0.1:9000;
@@ -666,21 +724,19 @@ server {
         fastcgi_param PATH_INFO $fastcgi_path_info;
         fastcgi_param HTTPS on;
     }
-    
-    # Static assets
+
     location ~* ^/storage/attachment/ {
         expires 1M;
         access_log off;
         try_files $uri $uri/ /index.php?$query_string;
     }
-    
+
     location ~* ^/(?:css|js)/.*\.(?:css|js)$ {
         expires 2d;
         access_log off;
         add_header Cache-Control "public, must-revalidate";
     }
-    
-    # Security
+
     location ~ /\. {
         deny all;
     }
@@ -754,7 +810,8 @@ services:
     image: freescout-app
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8443:8080"  # Local only (tunnel handles public)
+      - "127.0.0.1:8080:8080"  # HTTP — Cloudflare tunnel origin (HTTP, not HTTPS)
+      - "127.0.0.1:8443:8443"  # HTTPS — local emergency access only
     environment:
       - PUID=$(id -u)
       - PGID=$(id -g)
@@ -1555,10 +1612,12 @@ show_completion_message() {
     echo -e "  1. Go to Cloudflare Zero Trust → Networks → Tunnels"
     echo -e "  2. Click your tunnel → Configure → Public Hostname"
     echo -e "  3. Add/Edit Public Hostname:"
-    echo -e "     ${YELLOW}Service Type:${NC} HTTPS"
-    echo -e "     ${YELLOW}URL:${NC}          https://localhost:8443"
-    echo -e "     ${YELLOW}TLS Verify:${NC}   ${RED}Disabled${NC} (toggle 'No TLS Verify' ON)"
+    echo -e "     ${YELLOW}Service Type:${NC} HTTP  ${RED}(not HTTPS — tunnel handles TLS)${NC}"
+    echo -e "     ${YELLOW}URL:${NC}          http://localhost:8080"
     echo -e "     ${YELLOW}Origin Name:${NC}  $DOMAIN_NAME"
+    echo ""
+    echo -e "  ${CYAN}ℹ  The Cloudflare tunnel encrypts the public-facing connection."
+    echo -e "     No SSL is needed between cloudflared and this origin.${NC}"
     echo ""
     
     if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
@@ -1572,7 +1631,7 @@ show_completion_message() {
     echo -e "  • Update:    ${YELLOW}cd $DEFAULT_INSTALL_DIR && ./update.sh${NC}"
     echo -e "  • View logs: ${YELLOW}docker compose logs -f${NC}"
     echo -e "  • Stop:      ${YELLOW}docker compose down${NC}"
-    echo -e "  • Emergency: ${YELLOW}https://localhost:8080${NC} (accept cert warning)"
+    echo -e "  • Emergency: ${YELLOW}https://localhost:8443${NC} (accept cert warning) or ${YELLOW}http://localhost:8080${NC}"
     echo ""
 }
 
