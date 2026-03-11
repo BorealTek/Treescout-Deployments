@@ -18,6 +18,10 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Ensure docker/orbstack binaries are on PATH when run via non-interactive SSH
+# (macOS doesn't source .zshrc/.bashrc in non-interactive sessions).
+export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.orbstack/bin"
+
 #===============================================================================
 # GLOBALS & CONFIGURATION
 #===============================================================================
@@ -488,6 +492,15 @@ check_existing_installation() {
 }
 
 decommission_existing() {
+    # Kill any orphaned containers from a previous deploy by project label.
+    # This handles the case where the install dir was wiped without docker compose down.
+    local orphans
+    orphans=$(docker ps -q --filter "label=com.docker.compose.project=boreal-treescout" 2>/dev/null || true)
+    if [ -n "$orphans" ]; then
+        log_warning "Stopping orphaned containers from a previous deployment..."
+        docker rm -f $orphans >/dev/null 2>&1 || true
+    fi
+
     if [ -f "$DEFAULT_INSTALL_DIR/docker-compose.yml" ]; then
         log_step "Decommissioning Existing Installation"
         
@@ -1333,7 +1346,10 @@ build_and_launch_containers() {
     # migrations run.  Starting them now would cause a fatal error because the
     # `jobs` table (and other Laravel tables) do not yet exist in the database.
     log_info "Starting core services (db, redis, app, reverb)..."
-    docker compose up -d db redis app reverb
+    # --force-recreate: ensures fresh bind mounts even if old containers with the
+    # same project name exist (e.g. from a failed deploy that wasn't cleaned up).
+    # --remove-orphans: removes leftover containers from prior compose configs.
+    docker compose up -d --force-recreate --remove-orphans db redis app reverb
     
     log_success "Core containers launched (queue workers will start after migrations)"
 }
