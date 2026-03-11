@@ -1050,66 +1050,76 @@ clone_or_update_repo() {
     
     if [ -d "src" ]; then
         # Guard: src/ exists but is NOT a git repo (leftover from a failed deploy).
-        # Remove it and fall through to a clean clone rather than crashing.
+        # Re-clone rather than crashing on the update path.
         if ! git -C src rev-parse --git-dir >/dev/null 2>&1; then
             log_warning "src/ exists but is not a git repository (stale directory). Removing and re-cloning..."
             rm -rf src
             log_info "Cloning source..."
             git clone -b "$DEFAULT_BRANCH" "$DEFAULT_REPO" src
-            log_success "Repository ready"
-            return
-        fi
-
-        log_info "Source folder exists. Syncing..."
-        
-        cd src
-        git config --global --add safe.directory "$PWD"
-        git remote set-url origin "$DEFAULT_REPO"
-        git fetch origin
-        
-        if ! git checkout "$DEFAULT_BRANCH" 2>/dev/null; then
-            git checkout -b "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
-        fi
-        
-        if ! git pull origin "$DEFAULT_BRANCH"; then
-            log_error "Git pull failed! Local changes detected."
+        else
+            log_info "Source folder exists. Syncing..."
             
-            if [ -t 0 ]; then
-                echo ""
-                echo "1) Discard local changes (git reset --hard)"
-                echo "2) Nuke & Re-clone (Delete src and download fresh)"
-                echo "3) Exit and fix manually"
-                read -rp "Select [1-3]: " git_opt
-                
-                case "$git_opt" in
-                    1)
-                        log_info "Resetting to origin/$DEFAULT_BRANCH..."
-                        git reset --hard "origin/$DEFAULT_BRANCH"
-                        ;;
-                    2)
-                        log_warning "Nuking source directory..."
-                        cd ..
-                        rm -rf src
-                        git clone -b "$DEFAULT_BRANCH" "$DEFAULT_REPO" src
-                        cd src
-                        ;;
-                    *)
-                        log_error "Aborting. Please fix git conflicts manually."
-                        exit 1
-                        ;;
-                esac
-            else
-                log_error "Cannot handle git conflict in non-interactive mode"
-                exit 1
+            cd src
+            git config --global --add safe.directory "$PWD"
+            git remote set-url origin "$DEFAULT_REPO"
+            git fetch origin
+            
+            if ! git checkout "$DEFAULT_BRANCH" 2>/dev/null; then
+                git checkout -b "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
             fi
+            
+            if ! git pull origin "$DEFAULT_BRANCH"; then
+                log_error "Git pull failed! Local changes detected."
+                
+                if [ -t 0 ]; then
+                    echo ""
+                    echo "1) Discard local changes (git reset --hard)"
+                    echo "2) Nuke & Re-clone (Delete src and download fresh)"
+                    echo "3) Exit and fix manually"
+                    read -rp "Select [1-3]: " git_opt
+                    
+                    case "$git_opt" in
+                        1)
+                            log_info "Resetting to origin/$DEFAULT_BRANCH..."
+                            git reset --hard "origin/$DEFAULT_BRANCH"
+                            ;;
+                        2)
+                            log_warning "Nuking source directory..."
+                            cd ..
+                            rm -rf src
+                            git clone -b "$DEFAULT_BRANCH" "$DEFAULT_REPO" src
+                            cd src
+                            ;;
+                        *)
+                            log_error "Aborting. Please fix git conflicts manually."
+                            exit 1
+                            ;;
+                    esac
+                else
+                    log_error "Cannot handle git conflict in non-interactive mode"
+                    exit 1
+                fi
+            fi
+            
+            cd ..
         fi
-        
-        cd ..
     else
         log_info "Cloning source..."
         git clone -b "$DEFAULT_BRANCH" "$DEFAULT_REPO" src
     fi
-    
+
+    # Initialize the deployment submodule so cloudflared/ config is available
+    # for deploy_cloudflared() which runs later in main().
+    if [ -n "${REPO_TOKEN:-}" ]; then
+        log_info "Initializing deployment submodule..."
+        cd src
+        git config submodule.deployment.url \
+            "https://oauth2:${REPO_TOKEN}@github.com/BorealTek/Treescout-Deployments"
+        GIT_TERMINAL_PROMPT=0 git -c credential.helper= submodule update --init deployment \
+            || log_warning "Could not initialize deployment submodule (cloudflared may be unavailable)"
+        cd ..
+    fi
+
     log_success "Repository ready"
 }
 
@@ -1244,6 +1254,37 @@ install_modules() {
     done
     
     log_success "Modules installed"
+}
+
+sync_modules_statuses() {
+    log_step "Syncing modules_statuses.json to installed modules"
+
+    local statuses_file="$DEFAULT_INSTALL_DIR/src/modules_statuses.json"
+
+    # Build JSON from what is physically present in src/Modules/, ensuring
+    # only cloned modules are registered with nwidart. Any module listed in
+    # the repo's modules_statuses.json but NOT cloned would cause a crash.
+    local json="{"
+    local first=true
+
+    if [ -d "$DEFAULT_INSTALL_DIR/src/Modules" ]; then
+        for module_dir in "$DEFAULT_INSTALL_DIR/src/Modules"/*/; do
+            [ -d "$module_dir" ] || continue
+            local module_name
+            module_name=$(basename "$module_dir")
+            if [ "$first" = true ]; then
+                json+="\"${module_name}\": true"
+                first=false
+            else
+                json+=", \"${module_name}\": true"
+            fi
+        done
+    fi
+
+    json+="}"
+
+    echo "$json" > "$statuses_file"
+    log_success "modules_statuses.json updated ($(echo "$json" | grep -o '"[A-Za-z]*": true' | wc -l | tr -d ' ') modules enabled)"
 }
 
 patch_modules() {
@@ -1568,6 +1609,7 @@ main() {
     clone_or_update_repo
     configure_laravel
     install_modules
+    sync_modules_statuses
     patch_modules
     patch_database_seeder
     setup_storage_permissions
