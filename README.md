@@ -59,3 +59,12 @@ bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployment
 *   **Requirements**: 
     *   Linux: Docker Engine, Docker Compose
     *   macOS: OrbStack (Recommended) or Docker Desktop
+
+---
+
+## 🔐 SSH & Cloudflare Tunnel
+
+The Cloudflare tunnel runs as a **separate, standalone stack** in [`cloudflared/`](cloudflared/) — intentionally decoupled from the app so that taking the app down for maintenance never kills SSH access, and so the tunnel can serve other hostnames/services on the same server.
+
+See **[cloudflared/README.md](cloudflared/README.md)** for full setup instructions (Docker Compose, Zero Trust configuration, client `~/.ssh/config`, VS Code Remote SSH, and a systemd alternative).
+

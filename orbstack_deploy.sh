@@ -60,6 +60,7 @@ MODULES_TO_INSTALL=(
     "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
     "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+    "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
     "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
@@ -70,6 +71,7 @@ MODULES_TO_INSTALL=(
     "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
     "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
+    "TreeScoutDeploymentManager|https://github.com/BorealTek/TreeScoutDeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
 
@@ -155,6 +157,17 @@ validate_required_var() {
     if [ -z "$var_value" ]; then
         log_error "Required variable '$var_name' is not set"
         exit 1
+    fi
+}
+
+sed_in_place() {
+    local expression="$1"
+    local file="$2"
+
+    if sed --version >/dev/null 2>&1; then
+        sed -i "$expression" "$file"
+    else
+        sed -i '' "$expression" "$file"
     fi
 }
 
@@ -295,7 +308,6 @@ DEFAULT_INSTALL_DIR="$DEFAULT_INSTALL_DIR"
 
 # Domain & Cloudflare Tunnel
 DOMAIN_NAME="devtickets.scotchmcdonald.dev"
-CF_TUNNEL_TOKEN=""  # Get from Cloudflare Zero Trust Dashboard
 
 # Database Settings
 DB_ROOT_PASS="$(openssl rand -hex 16)"
@@ -372,11 +384,6 @@ interactive_setup() {
     safe_read "Domain Name [devtickets.scotchmcdonald.dev]: " input_domain
     DOMAIN_NAME="${input_domain:-devtickets.scotchmcdonald.dev}"
     
-    while [ -z "${CF_TUNNEL_TOKEN:-}" ]; do
-        echo -e "${YELLOW}Paste your Cloudflare Tunnel Token (starts with ey...):${NC}"
-        safe_read "> " CF_TUNNEL_TOKEN
-    done
-    echo ""
     
     # Admin configuration
     log_info "Admin User"
@@ -701,7 +708,6 @@ DB_PASSWORD=${DB_PASS}
 APP_URL=https://${DOMAIN_NAME}
 REDIS_HOST=redis
 REDIS_PORT=6379
-TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
 EOF
 
     # Pass through any environment variables ending in _TOKEN, _KEY, or _SECRET
@@ -735,7 +741,7 @@ services:
     image: freescout-app
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"  # Local only (tunnel handles public)
+      - "127.0.0.1:8443:8080"  # Local only (tunnel handles public)
     environment:
       - PUID=$(id -u)
       - PGID=$(id -g)
@@ -763,6 +769,10 @@ services:
       # Used by EmailMigration module for spinning up temporary test mail servers
       # OrbStack: Uses same socket path as standard Docker (/var/run/docker.sock)
       - /var/run/docker.sock:/var/run/docker.sock
+      # Named volumes: prevent storage/ and bootstrap/cache/ permission drift
+      # between www-data (in-container) and your local user (host bind mount).
+      - storage_data:/var/www/html/storage
+      - bootstrap_cache:/var/www/html/bootstrap/cache
     depends_on:
       db:
         condition: service_healthy
@@ -781,7 +791,7 @@ services:
     image: mariadb:10.6
     restart: unless-stopped
     # Use mariadbd with SSL explicitly disabled to fix "SSL is required" error
-    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --innodb-file-per-table=1 --skip-innodb-read-only-compressed --skip-ssl
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --innodb-file-per-table=1 --skip-innodb-read-only-compressed --skip-ssl --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MARIADB_ROOT_PASSWORD: \${DB_ROOT_PASSWORD}
       MARIADB_DATABASE: \${DB_DATABASE}
@@ -824,6 +834,8 @@ services:
       - DB_PASSWORD=\${DB_PASSWORD}
     volumes:
       - ./src:/var/www/html
+      - storage_data:/var/www/html/storage
+      - bootstrap_cache:/var/www/html/bootstrap/cache
     depends_on:
       - app
       - db
@@ -845,6 +857,8 @@ services:
       '
     volumes:
       - ./src:/var/www/html
+      - storage_data:/var/www/html/storage
+      - bootstrap_cache:/var/www/html/bootstrap/cache
     depends_on:
       - app
       - db
@@ -868,6 +882,8 @@ services:
       - PHP_OPCACHE_ENABLE=1
     volumes:
       - ./src:/var/www/html
+      - storage_data:/var/www/html/storage
+      - bootstrap_cache:/var/www/html/bootstrap/cache
     depends_on:
       - app
       - db
@@ -875,12 +891,26 @@ services:
     networks:
       - fs-net
 
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel run
+  queue-billing:
+    image: freescout-app
+    restart: always
+    command: php artisan queue:work --queue=billing --sleep=3 --tries=3 --max-time=3600
     environment:
-      - TUNNEL_TOKEN=\${TUNNEL_TOKEN}
+      - PHP_MEMORY_LIMIT=512M
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=\${DB_DATABASE}
+      - DB_USERNAME=\${DB_USER}
+      - DB_PASSWORD=\${DB_PASSWORD}
+    volumes:
+      - ./src:/var/www/html
+      - storage_data:/var/www/html/storage
+      - bootstrap_cache:/var/www/html/bootstrap/cache
+    depends_on:
+      - app
+      - db
+      - redis
     networks:
       - fs-net
 
@@ -890,6 +920,10 @@ networks:
 
 volumes:
   db_data:
+  # storage_data: persists uploads, logs, and framework cache across source code updates
+  storage_data:
+  # bootstrap_cache: persists compiled config/routes/views between container restarts
+  bootstrap_cache:
 EOF
     
     log_success "Docker Compose config generated"
@@ -900,30 +934,111 @@ generate_update_script() {
     
     cat > update.sh <<EOF
 #!/usr/bin/env bash
+#===============================================================================
+# FreeScout Zero-Downtime Update Script (generated by orbstack_deploy.sh)
+#
+# Sequence:
+#   1. Maintenance mode ON        → users see 503, not 500
+#   2. git pull + submodule sync  → get latest code
+#   3. Rebuild image + restart    → new containers
+#   4. Init storage in volumes    → safe after named-volume remount
+#   5. composer install           → locked deps (never composer update)
+#   6. npm build                  → bake assets before cache warm
+#   7. migrate                    → schema changes under maintenance mode
+#   8. Cache warm                 → config/route/view/event caches
+#   9. queue:restart              → workers pick up new code gracefully
+#  10. Maintenance mode OFF       → site goes live
+#===============================================================================
 set -euo pipefail
 
-echo "🔄 Updating FreeScout..."
+readonly GREEN='\\\033[38;5;46m'
+readonly CYAN='\\\033[38;5;51m'
+readonly YELLOW='\\\033[38;5;226m'
+readonly NC='\\\033[0m'
 
+log_step() { echo -e "\n\${CYAN}➜\${NC} \$*"; }
+log_ok()   { echo -e "\${GREEN}✔\${NC} \$*"; }
+log_warn() { echo -e "\${YELLOW}⚠\${NC} \$*"; }
+
+CD_HERE=\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)
+cd "\$CD_HERE"
+
+run_artisan() {
+    local desc="\$1"; shift
+    log_step "\$desc"
+    if ! docker compose exec -T app php artisan "\$@"; then
+        log_warn "Artisan step failed: php artisan \$*"
+        docker compose exec -T app php artisan up 2>/dev/null || true
+        exit 1
+    fi
+}
+
+# ── 1. Maintenance Mode ───────────────────────────────────────────────────────
+log_step "Entering maintenance mode (users will see 503)..."
+docker compose exec -T app php artisan down --retry=60 2>/dev/null || log_warn "Could not enter maintenance mode (first deploy?)"
+
+# ── 2. Pull Latest Code ───────────────────────────────────────────────────────
+log_step "Pulling latest source code..."
 cd src
 git pull origin ${DEFAULT_BRANCH}
+git submodule update --init --recursive
 cd ..
 
-echo "🐳 Rebuilding containers..."
+# ── 3. Rebuild & Restart Containers ──────────────────────────────────────────
+log_step "Rebuilding application image..."
 docker compose build app
-docker compose up -d
 
-echo "🗄️  Running migrations..."
-docker compose exec -T app php artisan migrate --force
+log_step "Restarting app and worker containers (zero-downtime: DB/Redis stay up)..."
+docker compose up -d --no-deps app queue queue-billing cron reverb
 
-echo "📦 Installing dependencies..."
-docker compose exec -T -u root app composer update --no-dev --optimize-autoloader
+# Re-enter maintenance mode after container restart (artisan up was reset)
+docker compose exec -T app php artisan down --retry=60 2>/dev/null || true
+
+# ── 4. Re-initialize Storage in Named Volumes ────────────────────────────────
+log_step "Re-initializing storage directories in named volumes..."
+docker compose exec -T -u root app bash -c '
+    mkdir -p /var/www/html/storage/framework/{cache,sessions,views,testing} \
+             /var/www/html/storage/logs \
+             /var/www/html/bootstrap/cache && \
+    chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache && \
+    chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+'
+
+# ── 5. Install Dependencies ───────────────────────────────────────────────────
+log_step "Installing Composer dependencies (locked versions)..."
+docker compose exec -T -u root app composer install --no-dev --optimize-autoloader
+docker compose exec -T -u root app chown -R www-data:www-data /var/www/html/vendor /var/www/html/composer.lock
+
+# ── 6. Build Frontend Assets ─────────────────────────────────────────────────
+log_step "Building frontend assets..."
 docker compose exec -T -u root app npm install
 docker compose exec -T -u root app npm run build
+docker compose exec -T -u root app chown -R www-data:www-data /var/www/html/public/build 2>/dev/null || true
 
-echo "🧹 Clearing caches..."
-docker compose exec -T app php artisan freescout:clear-cache
+# ── 7. Run Migrations ─────────────────────────────────────────────────────────
+run_artisan "Running core database migrations..." migrate --force
+run_artisan "Running module migrations..." module:migrate --all --force
 
-echo "✅ Update complete!"
+# ── 8. Warm Caches ────────────────────────────────────────────────────────────
+# NOTE: after config:cache, env() outside config files returns null.
+# This codebase routes all env() through config() — safe to apply.
+run_artisan "Caching configuration..." config:cache
+run_artisan "Caching routes..." route:cache
+run_artisan "Caching Blade views..." view:cache
+run_artisan "Caching event/listener map..." event:cache
+
+# ── 9. Restart Queue Workers ──────────────────────────────────────────────────
+run_artisan "Signalling queue workers to restart with new code..." queue:restart
+
+# ── 10. Go Live ───────────────────────────────────────────────────────────────
+log_step "Exiting maintenance mode — site is live!"
+docker compose exec -T app php artisan up
+
+log_step "Pruning unused Docker layers..."
+docker image prune -f >/dev/null 2>&1 || true
+
+APP_URL=\$(grep "^APP_URL=" src/.env | cut -d'=' -f2)
+log_ok "Update complete! App is live at \${APP_URL}"
 EOF
     
     chmod +x update.sh
@@ -994,13 +1109,18 @@ configure_laravel() {
     
     local env_file="src/.env"
     
-    # Use BSD sed syntax for macOS
-    sed -i '' "s|APP_URL=http://localhost|APP_URL=https://${DOMAIN_NAME}|g" "$env_file"
-    sed -i '' "s/DB_HOST=127.0.0.1/DB_HOST=db/g" "$env_file"
-    sed -i '' "s/DB_PASSWORD=/DB_PASSWORD=${DB_PASS}/g" "$env_file"
-    sed -i '' "s/CACHE_STORE=database/CACHE_STORE=redis/g" "$env_file"
-    sed -i '' "s/REDIS_HOST=127.0.0.1/REDIS_HOST=redis/g" "$env_file"
-    sed -i '' "s/APP_FORCE_HTTPS=false/APP_FORCE_HTTPS=true/g" "$env_file"
+    # NOTE: .env.example has DB settings commented out — match the commented forms
+    # APP_NAME is already set correctly in .env.example
+    sed_in_place "s/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/g" "$env_file"
+    sed_in_place "s|# DB_HOST=127.0.0.1|DB_HOST=db|g" "$env_file"
+    sed_in_place "s/# DB_PORT=3306/DB_PORT=3306/g" "$env_file"
+    sed_in_place "s/# DB_DATABASE=laravel/DB_DATABASE=${DB_NAME}/g" "$env_file"
+    sed_in_place "s/# DB_USERNAME=root/DB_USERNAME=${DB_USER}/g" "$env_file"
+    sed_in_place "s/# DB_PASSWORD=/DB_PASSWORD=${DB_PASS}/g" "$env_file"
+    sed_in_place "s|APP_URL=http://localhost|APP_URL=https://${DOMAIN_NAME}|g" "$env_file"
+    sed_in_place "s/CACHE_STORE=database/CACHE_STORE=redis/g" "$env_file"
+    sed_in_place "s/SESSION_DRIVER=database/SESSION_DRIVER=redis/g" "$env_file"
+    sed_in_place "s/REDIS_HOST=127.0.0.1/REDIS_HOST=redis/g" "$env_file"
     
     # Admin credentials
     cat >> "$env_file" <<EOF
@@ -1078,8 +1198,18 @@ install_modules() {
         if [ -d "$target_dir" ]; then
             log_info "Module $name already exists. Updating..."
             cd "$target_dir"
-            git fetch origin
-            git pull
+            local token_var_update=$(echo "$module_entry" | cut -d'|' -f3)
+            local token_val_update="${!token_var_update:-}"
+            if [ -n "$token_val_update" ]; then
+                local remote_url
+                remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+                if [[ "$remote_url" != *"@"* ]] && [ -n "$remote_url" ]; then
+                    local clean_remote="${remote_url#https://}"
+                    git remote set-url origin "https://oauth2:${token_val_update}@${clean_remote}" 2>/dev/null || true
+                fi
+            fi
+            GIT_TERMINAL_PROMPT=0 git -c credential.helper= fetch origin
+            GIT_TERMINAL_PROMPT=0 git -c credential.helper= pull
             cd - >/dev/null
             continue
         fi
@@ -1099,7 +1229,7 @@ install_modules() {
             fi
         fi
 
-        git clone "$final_url" "$target_dir" || log_error "Failed to clone $name"
+        GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone "$final_url" "$target_dir" || log_error "Failed to clone $name"
     done
     
     log_success "Modules installed"
@@ -1135,8 +1265,8 @@ setup_storage_permissions() {
     mkdir -p src/storage/logs
     mkdir -p src/bootstrap/cache
     
-    # Set permissive permissions for Docker
-    chmod -R 777 src/storage src/bootstrap/cache
+    # 775: owner/group (www-data) can write; others can read. Safer than 777.
+    chmod -R 775 src/storage src/bootstrap/cache
     
     log_success "Storage directories ready"
 }
@@ -1160,7 +1290,7 @@ wait_for_database() {
     local attempt=0
     
     while [ $attempt -lt $max_attempts ]; do
-        if docker compose exec -T db mysqladmin ping -h localhost -u root -p"${DB_ROOT_PASS}" >/dev/null 2>&1; then
+        if docker compose exec -T db mariadb -u root -p"${DB_ROOT_PASS}" -e "SELECT 1;" >/dev/null 2>&1; then
             log_success "Database is ready"
             return 0
         fi
@@ -1174,8 +1304,75 @@ wait_for_database() {
     return 1
 }
 
+wait_for_app_database_connectivity() {
+    log_step "Validating App -> DB Connectivity"
+
+    local max_attempts=30
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        if docker compose exec -T app php -r '
+            $dsn = "mysql:host=" . getenv("DB_HOST") . ";port=" . getenv("DB_PORT") . ";dbname=" . getenv("DB_DATABASE");
+            new PDO($dsn, getenv("DB_USERNAME"), getenv("DB_PASSWORD"));
+            echo "ok";
+        ' >/dev/null 2>&1; then
+            log_success "App container can connect to database"
+            return 0
+        fi
+
+        ((attempt++))
+        echo -ne "\r${CYAN}⏳${NC} Attempt $attempt/$max_attempts..."
+        sleep 2
+    done
+
+    log_error "App container could not connect to database"
+    return 1
+}
+
+dump_failure_diagnostics() {
+    log_warning "Collecting diagnostics..."
+
+    docker compose ps || true
+
+    echo ""
+    log_warning "Last 120 lines of app logs"
+    docker compose logs --tail=120 app || true
+
+    echo ""
+    log_warning "Last 120 lines of db logs"
+    docker compose logs --tail=120 db || true
+
+    echo ""
+    log_warning "Last 120 lines of Laravel log"
+    docker compose exec -T app sh -lc 'if [ -f /var/www/html/storage/logs/laravel.log ]; then tail -n 120 /var/www/html/storage/logs/laravel.log; else echo "No laravel.log present"; fi' || true
+}
+
+run_artisan_step() {
+    local description="$1"
+    shift
+
+    log_info "$description"
+    if ! docker compose exec -T app php artisan "$@"; then
+        log_error "Failed artisan step: php artisan $*"
+        dump_failure_diagnostics
+        return 1
+    fi
+}
+
 install_dependencies() {
     log_step "Installing Dependencies"
+
+    # Initialize storage directory tree INSIDE the named volumes.
+    # Named volumes start empty, so this must run before anything tries to write
+    # to storage/ or bootstrap/cache/ (e.g. Composer autoloader, Blade compiler).
+    log_info "Initializing storage directories in named volumes..."
+    docker compose exec -T -u root app bash -c '
+        mkdir -p /var/www/html/storage/framework/{cache,sessions,views,testing} \
+                 /var/www/html/storage/logs \
+                 /var/www/html/bootstrap/cache && \
+        chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache && \
+        chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+    '
     
     log_info "Installing Composer dependencies..."
     docker compose exec -T -u root app composer install --no-dev --optimize-autoloader
@@ -1186,48 +1383,92 @@ install_dependencies() {
     
     log_info "Building frontend assets..."
     docker compose exec -T -u root app npm run build
+    docker compose exec -T -u root app chown -R www-data:www-data /var/www/html/public/build 2>/dev/null || true
     
     log_success "Dependencies installed"
 }
 
 finalize_installation() {
     log_step "Finalizing Installation"
-    
-    log_info "Generating application key..."
-    docker compose exec -T app php artisan key:generate
-    
-    if [ "$REUSE_DB" = true ]; then
-        log_info "Running migrations on existing database..."
-        docker compose exec -T app php artisan migrate --force
+
+    # ── APP_KEY ────────────────────────────────────────────────────────────────
+    # Only generate a new APP_KEY on a FRESH install.
+    # Regenerating on a redeployment invalidates all active sessions and any
+    # database values encrypted with the old key (e.g. mailbox passwords).
+    local current_key
+    current_key=$(grep "^APP_KEY=" src/.env 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'")
+    if [ -z "$current_key" ]; then
+        run_artisan_step "Generating application key (fresh install)..." key:generate
     else
-        log_info "Installing FreeScout..."
-        docker compose exec -T app php artisan freescout:install \
+        log_info "APP_KEY already set — skipping key:generate to preserve sessions"
+    fi
+
+    # ── Maintenance Mode ───────────────────────────────────────────────────────
+    # Puts up a 503 page so users don't hit 500 errors while migrations run.
+    # We use || true so a fresh install (no DB yet) doesn't abort.
+    log_info "Entering maintenance mode..."
+    docker compose exec -T app php artisan down --retry=60 2>/dev/null || true
+
+    # ── Migrations ────────────────────────────────────────────────────────────
+    if [ "$REUSE_DB" = true ]; then
+        run_artisan_step "Running core migrations..." migrate --force || {
+            docker compose exec -T app php artisan up 2>/dev/null || true
+            return 1
+        }
+    else
+        log_info "Running fresh FreeScout installation..."
+        if ! docker compose exec -T app php artisan freescout:install \
             --force \
             --email="$ADMIN_EMAIL" \
             --password="$ADMIN_PASS" \
-            --first_name="Admin" \
-            --last_name="User"
+            --first_name="${ADMIN_FIRST_NAME:-Admin}" \
+            --last_name="${ADMIN_LAST_NAME:-User}"; then
+            log_error "Failed artisan step: php artisan freescout:install"
+            docker compose exec -T app php artisan up 2>/dev/null || true
+            dump_failure_diagnostics
+            return 1
+        fi
     fi
-    
-    log_info "Running module migrations..."
-    docker compose exec -T app php artisan module:migrate --all --force
-    
-    log_info "Seeding KnowledgeBase content..."
+
+    run_artisan_step "Running module migrations..." module:migrate --all --force || {
+        docker compose exec -T app php artisan up 2>/dev/null || true
+        return 1
+    }
+
+    # ── Seeding ───────────────────────────────────────────────────────────────
+    log_info "Seeding modules..."
     echo '
 $modules = Module::all();
 foreach($modules as $module) {
     if (!$module->isEnabled()) continue;
-    $seeder = "Modules\\" . $module->getName() . "\\Database\\Seeders\\KnowledgeBaseSeeder";
-    if (class_exists($seeder)) {
-        echo "Seeding " . $module->getName() . "...\n";
-        Artisan::call("db:seed", ["--class" => $seeder, "--force" => true]);
-    }
+    echo "Seeding " . $module->getName() . "...\n";
+    Artisan::call("module:seed", ["module" => $module->getName(), "--force" => true]);
 }
 ' | docker compose exec -T app php artisan tinker
 
-    log_info "Seeding themes..."
-    docker compose exec -T app php artisan db:seed --class=ThemeSeeder --force
-    
+    run_artisan_step "Seeding themes..." db:seed --class=ThemeSeeder --force
+
+    # ── Cache Warming ──────────────────────────────────────────────────────────
+    # Must run AFTER all migrations and seeders are complete.
+    #
+    # IMPORTANT: After config:cache is applied, any env() call outside a config
+    # file returns null. This codebase correctly routes all env() through config().
+    # Route closures cannot be cached — this app uses controller classes only. ✓
+    log_info "Warming application caches..."
+    run_artisan_step "Caching configuration (eliminates per-request config parsing)..." config:cache
+    run_artisan_step "Caching routes (10-15x faster route resolution)..." route:cache
+    run_artisan_step "Caching Blade views (eliminates first-hit compile cost)..." view:cache
+    run_artisan_step "Caching event/listener map (faster module boot)..." event:cache
+
+    # ── Queue Restart ─────────────────────────────────────────────────────────
+    # Signals running queue workers to gracefully finish their current job and
+    # restart, picking up the freshly cached config and new code.
+    run_artisan_step "Signalling queue workers to restart with new code..." queue:restart
+
+    # ── Back Online ───────────────────────────────────────────────────────────
+    log_info "Exiting maintenance mode..."
+    docker compose exec -T app php artisan up
+
     log_success "Installation finalized"
 }
 
@@ -1249,7 +1490,7 @@ show_completion_message() {
     echo -e "  2. Click your tunnel → Configure → Public Hostname"
     echo -e "  3. Add/Edit Public Hostname:"
     echo -e "     ${YELLOW}Service Type:${NC} HTTPS"
-    echo -e "     ${YELLOW}URL:${NC}          https://app:8080"
+    echo -e "     ${YELLOW}URL:${NC}          https://localhost:8443"
     echo -e "     ${YELLOW}TLS Verify:${NC}   ${RED}Disabled${NC} (toggle 'No TLS Verify' ON)"
     echo -e "     ${YELLOW}Origin Name:${NC}  $DOMAIN_NAME"
     echo ""
@@ -1305,7 +1546,6 @@ main() {
 
     # Validate required variables
     validate_required_var "DOMAIN_NAME" "${DOMAIN_NAME:-}"
-    validate_required_var "CF_TUNNEL_TOKEN" "${CF_TUNNEL_TOKEN:-}"
     
     # Execute deployment
     decommission_existing
@@ -1324,14 +1564,64 @@ main() {
     setup_storage_permissions
     build_and_launch_containers
     wait_for_database
+    wait_for_app_database_connectivity
     install_dependencies
     finalize_installation
+    deploy_cloudflared
     
     # Cleanup
     log_info "Pruning unused Docker resources..."
     docker image prune -f >/dev/null 2>&1 || true
     
     show_completion_message
+}
+
+deploy_cloudflared() {
+    if [ -n "${CF_TUNNEL_TOKEN:-}" ]; then
+        log_step "Checking Cloudflare Tunnel"
+        
+        local existing_tunnels
+        existing_tunnels=$(docker ps --format "{{.ID}}|{{.Names}}|{{.Image}}" | grep -i "cloudflared" || true)
+        
+        local do_deploy_cf=true
+        if [ -n "$existing_tunnels" ]; then
+            log_warning "Existing cloudflared containers detected:"
+            echo "$existing_tunnels" | while IFS='|' read -r id name image; do
+                echo "  - $name ($id)"
+            done
+            
+            if [ -t 0 ] || [ -c /dev/tty ]; then
+                echo ""
+                safe_read "Do you want to stop existing tunnel containers and redeploy the standalone utility? [y/N]: " redeploy_cf
+                if [[ "$redeploy_cf" =~ ^[Yy]$ ]]; then
+                    echo "$existing_tunnels" | while IFS='|' read -r id name image; do
+                        log_info "Stopping $name..."
+                        docker stop "$id" >/dev/null || true
+                    done
+                else
+                    log_info "Skipping standalone cloudflared deployment."
+                    do_deploy_cf=false
+                fi
+            else
+                log_warning "Non-interactive mode: skipping standalone cloudflared deployment to avoid interrupting existing services."
+                do_deploy_cf=false
+            fi
+        fi
+        
+        if [ "$do_deploy_cf" = true ]; then
+            log_info "Deploying standalone Cloudflare Tunnel..."
+            local cf_dir="$DEFAULT_INSTALL_DIR/src/deployment/cloudflared"
+            if [ -d "$cf_dir" ]; then
+                cd "$cf_dir"
+                echo "CF_TUNNEL_TOKEN=\"${CF_TUNNEL_TOKEN}\"" > .env
+                docker compose up -d
+                cd - >/dev/null
+                log_success "Cloudflare Tunnel deployed"
+            else
+                log_error "Cloudflared directory not found at $cf_dir"
+            fi
+        fi
+    fi
 }
 
 # Run main function

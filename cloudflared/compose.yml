@@ -1,0 +1,36 @@
+# Standalone Cloudflare Tunnel Stack
+#
+# Run this SEPARATELY from the app stack so it has an independent lifecycle.
+# Using host networking means cloudflared can reach any port on the host
+# (SSH on :22, the app on :8443, other services, etc.) without container
+# plumbing — and it survives app stack restarts/teardowns.
+#
+# Prerequisites:
+#   1. Create a .env file here (or export vars) with CF_TUNNEL_TOKEN set.
+#      Copy from ../deploy.conf or set inline:
+#        echo "CF_TUNNEL_TOKEN=eyJ..." > deployment/cloudflared/.env
+#
+#   2. Add the public hostnames in Cloudflare Zero Trust → Networks → Tunnels:
+#        ssh.tickets.borealtek.ca  →  SSH   →  localhost:22
+#        tickets.borealtek.ca      →  HTTPS →  localhost:8443  (if not already set)
+#
+#   3. Protect the SSH hostname in Zero Trust → Access → Applications with
+#      your existing Google OAuth policy.
+#
+# Usage:
+#   cd deployment/cloudflared
+#   docker compose up -d
+#   docker compose logs -f
+#
+# To run on boot without Docker Compose, see the systemd alternative below.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    # Host networking: reaches localhost:22 (SSH), localhost:8443 (app),
+    # and any other host service without extra routing config.
+    network_mode: host
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}

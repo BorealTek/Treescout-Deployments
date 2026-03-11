@@ -53,11 +53,28 @@ REUSE_DB=true  # Optimistic default - decommission_existing will handle graceful
 ADMIN_PASS_PRESERVED=false
 CLEANUP_NEEDED=false
 
-# Default Modules
+# Default Modules — FULL install (BorealTek internal deployment)
+#
+# IMPORTANT: The core app repo (Scotchmcdonald/freescout) is PUBLIC.
+#            ALL BorealTek module repos below are PRIVATE.
+#            REPO_TOKEN must be set to a GitHub PAT with repo scope before deploy.
+#
+# To deploy a subset of modules for a specific client, edit deploy.conf:
+#   MODULES_TO_INSTALL=(
+#       "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+#       "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+#       ... only what the client needs ...
+#   )
+#
+# Canonical module list and deployment profiles are defined in:
+#   deployment/modules.manifest.json
+# Developer setup uses:
+#   ./scripts/setup-modules.sh [profile]
 MODULES_TO_INSTALL=(
     "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
     "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+    "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
     "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
@@ -68,6 +85,7 @@ MODULES_TO_INSTALL=(
     "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
     "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
+    "TreeScoutDeploymentManager|https://github.com/BorealTek/TreeScoutDeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
 
@@ -874,7 +892,7 @@ EOF
 
     # Pass through any environment variables ending in _TOKEN, _KEY, or _SECRET
     # This allows passing git access tokens for modules
-    env | grep -E '(_TOKEN|_KEY|_SECRET)=' | grep -vE '^(DB_|APP_|REDIS_|GOOGLE_|REVERB_)' >> .env || true
+    env | grep -E '(_TOKEN|_KEY|_SECRET)=' | grep -vE '^(DB_|APP_|REDIS_|GOOGLE_|REVERB_|TUNNEL_)' >> .env || true
     
     log_success "Docker .env generated"
 }
@@ -903,7 +921,7 @@ services:
     image: freescout-app
     restart: unless-stopped
     ports:
-      - "443:8080"  # HTTPS on standard port
+      - "127.0.0.1:8443:8080"  # HTTPS on standard port
     environment:
       - PUID=33
       - PGID=33
@@ -942,7 +960,7 @@ services:
     image: mariadb:10.6
     restart: unless-stopped
     # Use mariadbd with SSL explicitly disabled to fix "SSL is required" error
-    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --innodb-file-per-table=1 --skip-innodb-read-only-compressed --skip-ssl
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --innodb-file-per-table=1 --skip-innodb-read-only-compressed --skip-ssl --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MARIADB_ROOT_PASSWORD: \${DB_ROOT_PASSWORD}
       MARIADB_DATABASE: \${DB_DATABASE}
@@ -1445,16 +1463,13 @@ finalize_installation() {
         log_info "Running module migrations..."
         sudo docker compose exec -T app php artisan module:migrate --all --force
         
-        log_info "Seeding KnowledgeBase content..."
+        log_info "Seeding modules..."
         echo '
 $modules = Module::all();
 foreach($modules as $module) {
     if (!$module->isEnabled()) continue;
-    $seeder = "Modules\\" . $module->getName() . "\\Database\\Seeders\\KnowledgeBaseSeeder";
-    if (class_exists($seeder)) {
-        echo "Seeding " . $module->getName() . "...\n";
-        Artisan::call("db:seed", ["--class" => $seeder, "--force" => true]);
-    }
+    echo "Seeding " . $module->getName() . "...\n";
+    Artisan::call("module:seed", ["module" => $module->getName(), "--force" => true]);
 }
 ' | sudo docker compose exec -T app php artisan tinker
     else
@@ -1517,6 +1532,14 @@ show_completion_message() {
     echo -e "    Email: ${GREEN}${REPORTER_EMAIL:-reporter@example.com}${NC}"
     echo -e "    Pass:  ${GREEN}${REPORTER_PASS:-reporter123456789}${NC}"
     
+    echo ""
+    echo -e "${CYAN}Cloudflare Tunnel (SSH + Web):${NC}"
+    echo -e "  The tunnel runs as a separate stack — independent of this app."
+    echo -e "  Start it with:"
+    echo -e "    ${YELLOW}cd $DEFAULT_INSTALL_DIR/src/deployment/cloudflared${NC}"
+    echo -e "    ${YELLOW}echo CF_TUNNEL_TOKEN=\$CF_TUNNEL_TOKEN > .env${NC}"
+    echo -e "    ${YELLOW}docker compose up -d${NC}"
+    echo -e "  See deployment/cloudflared/README.md for full setup instructions."
     echo ""
     echo -e "${CYAN}Next Steps:${NC}"
     echo -e "  • To update: ${YELLOW}cd $DEFAULT_INSTALL_DIR && sudo ./update.sh${NC}"
@@ -1584,12 +1607,62 @@ main() {
     wait_for_database
     install_dependencies
     finalize_installation
+    deploy_cloudflared
     
     # Cleanup and success
     log_info "Pruning unused Docker resources..."
     sudo docker image prune -f >/dev/null 2>&1 || true
     
     show_completion_message
+}
+
+
+deploy_cloudflared() {
+    if [ -n "${CF_TUNNEL_TOKEN:-}" ]; then
+        log_step "Checking Cloudflare Tunnel"
+        
+        local existing_tunnels
+        existing_tunnels=$(sudo docker ps --format "{{.ID}}|{{.Names}}|{{.Image}}" | grep -i "cloudflared" || true)
+        
+        local do_deploy_cf=true
+        if [ -n "$existing_tunnels" ]; then
+            log_warning "Existing cloudflared containers detected:"
+            echo "$existing_tunnels" | while IFS='|' read -r id name image; do
+                echo "  - $name ($id)"
+            done
+            
+            if [ -t 0 ] || [ -c /dev/tty ]; then
+                echo ""
+                safe_read "Do you want to stop existing tunnel containers and redeploy the standalone utility? [y/N]: " redeploy_cf
+                if [[ "$redeploy_cf" =~ ^[Yy]$ ]]; then
+                    echo "$existing_tunnels" | while IFS='|' read -r id name image; do
+                        log_info "Stopping $name..."
+                        sudo docker stop "$id" >/dev/null || true
+                    done
+                else
+                    log_info "Skipping standalone cloudflared deployment."
+                    do_deploy_cf=false
+                fi
+            else
+                log_warning "Non-interactive mode: skipping standalone cloudflared deployment to avoid interrupting existing services."
+                do_deploy_cf=false
+            fi
+        fi
+        
+        if [ "$do_deploy_cf" = true ]; then
+            log_info "Deploying standalone Cloudflare Tunnel..."
+            local cf_dir="$DEFAULT_INSTALL_DIR/src/deployment/cloudflared"
+            if [ -d "$cf_dir" ]; then
+                cd "$cf_dir"
+                echo "CF_TUNNEL_TOKEN=\"${CF_TUNNEL_TOKEN}\"" > .env
+                sudo docker compose up -d
+                cd - >/dev/null
+                log_success "Cloudflare Tunnel deployed"
+            else
+                log_error "Cloudflared directory not found at $cf_dir"
+            fi
+        fi
+    fi
 }
 
 # Run main function

@@ -24,6 +24,12 @@ DOMAIN_NAME="freescout.example.com"
 # Cloudflare Tunnel Token (Required for OrbStack/macOS deployments)
 CF_TUNNEL_TOKEN=""
 
+# SSH hostname exposed via the same Cloudflare tunnel (e.g. ssh.yourcompany.com)
+# Configure this as a public hostname in Zero Trust → Networks → Tunnels:
+#   Service: SSH   URL: host.docker.internal:22
+# Then protect it in Zero Trust → Access → Applications with your Google OAuth policy.
+CF_SSH_HOSTNAME="ssh.freescout.example.com"
+
 # Docker Network Subnet (Avoid conflicts with existing networks)
 DOCKER_SUBNET="172.20.0.0/16"
 
@@ -76,16 +82,66 @@ GOOGLE_ADMIN_EMAILS=""
 GOOGLE_ALLOWED_DOMAINS=""
 
 #===============================================================================
+# Action1 RMM API Keys (3 Roles — Least Privilege)
+#===============================================================================
+# Each role has a separate OAuth2 Client ID + Client Secret, scoped to only
+# the permissions that role needs. Create these in the Action1 dashboard.
+#
+# Sync  (Role A) — Read-only: View Endpoints, Software Inventory, Groups
+# Run   (Role B) — Executor:  Run pre-vetted scripts only, View Automation History
+# Manage(Role C) — Admin/Dev: Create/modify/delete scripts, Manage Software Repo
+#
+# Region: us | eu | ap (shared across all roles)
+ACTION1_REGION="us"
+
+ACTION1_SYNC_CLIENT_ID=""
+ACTION1_SYNC_CLIENT_SECRET=""
+
+ACTION1_RUN_CLIENT_ID=""
+ACTION1_RUN_CLIENT_SECRET=""
+
+ACTION1_MANAGE_CLIENT_ID=""
+ACTION1_MANAGE_CLIENT_SECRET=""
+
+#===============================================================================
 # ADVANCED & MODULES
 #===============================================================================
 
-# GitHub Token for private modules (Optional)
+# GitHub Token — REQUIRED for all module repos (all BorealTek/* repos are PRIVATE)
+# The core app repo (Scotchmcdonald/freescout) is PUBLIC and does not need this.
+# Create a PAT at: https://github.com/settings/tokens  (scope: repo)
 export REPO_TOKEN=""
 
-# Configure modules to install
-# Format: "ModuleName|RepoURL|TokenEnvVarName|Branch"
-# Uncomment and edit lines below to install modules.
+# Modules to install for this deployment.
+# Format: "ModuleName|RepoURL|REPO_TOKEN|Branch"
+#
+# Edit this list to match the client profile you are deploying.
+# All available modules and named profiles are defined in:
+#   deployment/modules.manifest.json
+#
+# Common profiles:
+#
+#   full (BorealTek internal) — all modules
+#   core-msp                 — helpdesk + CRM + billing + assets + portal
+#   helpdesk-only            — CRM + portal + knowledge base only
+#   google-workspace-msp     — core-msp + Google Workspace sync
+#
+# Example — full:
 MODULES_TO_INSTALL=(
-    # "Crm|https://github.com/YourOrg/Crm.git|REPO_TOKEN|main"
-    # "PIB|https://github.com/YourOrg/PIB.git|REPO_TOKEN|main"
+    "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
+    "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
+    "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+    "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
+    "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
+    "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+    "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
+    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
+    "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
+    "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
+    "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
+    "TreeScoutDeploymentManager|https://github.com/BorealTek/TreeScoutDeploymentManager-Module.git|REPO_TOKEN|main"
+    "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
