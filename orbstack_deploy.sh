@@ -636,6 +636,13 @@ server {
     index index.php index.html;
     client_max_body_size 20M;
 
+    # Gzip — reduces 153KB CSS to ~30KB, JS chunks proportionally
+    gzip            on;
+    gzip_vary       on;
+    gzip_comp_level 6;
+    gzip_types      text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+    gzip_min_length 256;
+
     # Proxy WebSocket requests to Reverb container
     location /app/ {
         proxy_pass http://reverb_backend;
@@ -678,6 +685,13 @@ server {
         add_header Cache-Control "public, must-revalidate";
     }
 
+    # Vite build assets — long-lived cache (hashed filenames = safe forever)
+    location ^~ /build/ {
+        expires 1y;
+        access_log off;
+        add_header Cache-Control "public, immutable";
+    }
+
     # Security
     location ~ /\. {
         deny all;
@@ -693,6 +707,12 @@ server {
     root /var/www/html/public;
     index index.php index.html;
     client_max_body_size 20M;
+
+    gzip            on;
+    gzip_vary       on;
+    gzip_comp_level 6;
+    gzip_types      text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+    gzip_min_length 256;
 
     ssl_certificate /etc/nginx/ssl/cert.pem;
     ssl_certificate_key /etc/nginx/ssl/key.pem;
@@ -913,6 +933,8 @@ services:
       - redis
     networks:
       - fs-net
+    healthcheck:
+      disable: true
 
   cron:
     image: freescout-app
@@ -936,6 +958,8 @@ services:
       - redis
     networks:
       - fs-net
+    healthcheck:
+      disable: true
 
   reverb:
     image: freescout-app
@@ -961,6 +985,8 @@ services:
       - redis
     networks:
       - fs-net
+    healthcheck:
+      disable: true
 
   queue-billing:
     image: freescout-app
@@ -984,6 +1010,8 @@ services:
       - redis
     networks:
       - fs-net
+    healthcheck:
+      disable: true
 
 networks:
   fs-net:
@@ -1213,6 +1241,9 @@ configure_laravel() {
     sed_in_place "s/CACHE_STORE=database/CACHE_STORE=redis/g" "$env_file"
     sed_in_place "s/SESSION_DRIVER=database/SESSION_DRIVER=redis/g" "$env_file"
     sed_in_place "s/REDIS_HOST=127.0.0.1/REDIS_HOST=redis/g" "$env_file"
+    # Must run as production — debug mode adds significant per-request overhead
+    sed_in_place "s/^APP_ENV=.*/APP_ENV=production/g" "$env_file"
+    sed_in_place "s/^APP_DEBUG=.*/APP_DEBUG=false/g" "$env_file"
     
     # Admin credentials
     cat >> "$env_file" <<EOF
