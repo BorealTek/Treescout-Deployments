@@ -442,14 +442,15 @@ load_existing_credentials() {
     # Load Laravel .env credentials
     local laravel_env="$DEFAULT_INSTALL_DIR/src/.env"
     if [ -f "$laravel_env" ]; then
-        local existing_email existing_pass
+        local existing_email existing_pass existing_key
         existing_email=$(grep "^ADMIN_EMAIL=" "$laravel_env" | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
         existing_pass=$(grep "^ADMIN_PASSWORD=" "$laravel_env" | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
+        # Preserve APP_KEY so sessions survive redeployment
+        existing_key=$(grep "^APP_KEY=" "$laravel_env" | head -1 | cut -d '=' -f2- | tr -d '"' | tr -d "'" || echo "")
         
         if [ -n "$existing_email" ]; then ADMIN_EMAIL=$existing_email; fi
-        if [ -n "$existing_pass" ]; then
-            ADMIN_PASS=$existing_pass
-        fi
+        if [ -n "$existing_pass" ]; then ADMIN_PASS=$existing_pass; fi
+        if [ -n "$existing_key" ]; then EXISTING_APP_KEY=$existing_key; fi
     fi
 }
 
@@ -1221,28 +1222,25 @@ ADMIN_EMAIL=${ADMIN_EMAIL}
 ADMIN_PASSWORD="${ADMIN_PASS}"
 EOF
     
-    # Reverb/Broadcasting
+    # Reverb/Broadcasting — replace the placeholder values already in .env.example
     local reverb_app_id reverb_app_key reverb_app_secret
     reverb_app_id=$(openssl rand -hex 8)
     reverb_app_key=$(openssl rand -hex 16)
     reverb_app_secret=$(openssl rand -hex 16)
-    
-    cat >> "$env_file" <<EOF
 
-# Broadcasting (Reverb)
-BROADCAST_CONNECTION=reverb
-REVERB_APP_ID=${reverb_app_id}
-REVERB_APP_KEY=${reverb_app_key}
-REVERB_APP_SECRET=${reverb_app_secret}
-REVERB_HOST="reverb"
-REVERB_PORT=8080
-REVERB_SCHEME=http
-
-VITE_REVERB_APP_KEY="${reverb_app_key}"
-VITE_REVERB_HOST="${DOMAIN_NAME}"
-VITE_REVERB_PORT=443
-VITE_REVERB_SCHEME=https
-EOF
+    sed_in_place "s|^BROADCAST_CONNECTION=.*|BROADCAST_CONNECTION=reverb|g" "$env_file"
+    sed_in_place "s|^REVERB_APP_ID=.*|REVERB_APP_ID=${reverb_app_id}|g" "$env_file"
+    sed_in_place "s|^REVERB_APP_KEY=.*|REVERB_APP_KEY=${reverb_app_key}|g" "$env_file"
+    sed_in_place "s|^REVERB_APP_SECRET=.*|REVERB_APP_SECRET=${reverb_app_secret}|g" "$env_file"
+    sed_in_place "s|^REVERB_HOST=.*|REVERB_HOST=reverb|g" "$env_file"
+    sed_in_place "s|^REVERB_PORT=.*|REVERB_PORT=8080|g" "$env_file"
+    sed_in_place "s|^REVERB_SCHEME=.*|REVERB_SCHEME=http|g" "$env_file"
+    sed_in_place "s|^REVERB_SERVER_HOST=.*|REVERB_SERVER_HOST=\"${DOMAIN_NAME}\"|g" "$env_file"
+    sed_in_place "s|^REVERB_SERVER_PORT=.*|REVERB_SERVER_PORT=443|g" "$env_file"
+    sed_in_place "s|^VITE_REVERB_APP_KEY=.*|VITE_REVERB_APP_KEY=\"${reverb_app_key}\"|g" "$env_file"
+    sed_in_place "s|^VITE_REVERB_HOST=.*|VITE_REVERB_HOST=\"${DOMAIN_NAME}\"|g" "$env_file"
+    sed_in_place "s|^VITE_REVERB_PORT=.*|VITE_REVERB_PORT=443|g" "$env_file"
+    sed_in_place "s|^VITE_REVERB_SCHEME=.*|VITE_REVERB_SCHEME=https|g" "$env_file"
     
     # Google OAuth (if configured)
     if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
@@ -1258,7 +1256,9 @@ EOF
     fi
     
     # Trust Cloudflare proxies
-    echo "TRUSTED_PROXIES=*" >> "$env_file"
+    sed_in_place "s|^TRUSTED_PROXIES=.*|TRUSTED_PROXIES=*|g" "$env_file"
+    # Append only if the key doesn't already exist in .env.example
+    grep -q "^TRUSTED_PROXIES=" "$env_file" || echo "TRUSTED_PROXIES=*" >> "$env_file"
     
     log_success "Laravel environment configured"
 }
@@ -1520,12 +1520,16 @@ finalize_installation() {
     log_step "Finalizing Installation"
 
     # ── APP_KEY ────────────────────────────────────────────────────────────────
-    # Only generate a new APP_KEY on a FRESH install.
-    # Regenerating on a redeployment invalidates all active sessions and any
-    # database values encrypted with the old key (e.g. mailbox passwords).
+    # On a fresh install: generate a new key.
+    # On a redeployment: restore the existing key so active sessions survive.
+    # Regenerating on redeploy would invalidate all sessions and any database
+    # values encrypted with the old key (e.g. mailbox passwords).
     local current_key
-    current_key=$(grep "^APP_KEY=" src/.env 2>/dev/null | cut -d'=' -f2 | tr -d '"' | tr -d "'")
-    if [ -z "$current_key" ]; then
+    current_key=$(grep "^APP_KEY=" src/.env 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    if [ -z "$current_key" ] && [ -n "${EXISTING_APP_KEY:-}" ]; then
+        log_info "Restoring APP_KEY from previous installation to preserve sessions..."
+        sed_in_place "s|^APP_KEY=.*|APP_KEY=${EXISTING_APP_KEY}|" src/.env
+    elif [ -z "$current_key" ]; then
         run_artisan_step "Generating application key (fresh install)..." key:generate
     else
         log_info "APP_KEY already set — skipping key:generate to preserve sessions"
