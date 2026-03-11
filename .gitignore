@@ -1,5 +1,8 @@
 # Ignore local configuration with secrets
 deploy.conf
+deploy\ copy.conf
+deploy*.conf
+!deploy.conf.example
 
 # Ignore SSL certificates generated during deployment
 nginx/ssl/
