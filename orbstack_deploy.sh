@@ -1049,6 +1049,17 @@ clone_or_update_repo() {
     log_step "Cloning/Updating Repository"
     
     if [ -d "src" ]; then
+        # Guard: src/ exists but is NOT a git repo (leftover from a failed deploy).
+        # Remove it and fall through to a clean clone rather than crashing.
+        if ! git -C src rev-parse --git-dir >/dev/null 2>&1; then
+            log_warning "src/ exists but is not a git repository (stale directory). Removing and re-cloning..."
+            rm -rf src
+            log_info "Cloning source..."
+            git clone -b "$DEFAULT_BRANCH" "$DEFAULT_REPO" src
+            log_success "Repository ready"
+            return
+        fi
+
         log_info "Source folder exists. Syncing..."
         
         cd src
@@ -1114,8 +1125,8 @@ configure_laravel() {
     sed_in_place "s/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/g" "$env_file"
     sed_in_place "s|# DB_HOST=127.0.0.1|DB_HOST=db|g" "$env_file"
     sed_in_place "s/# DB_PORT=3306/DB_PORT=3306/g" "$env_file"
-    sed_in_place "s/# DB_DATABASE=laravel/DB_DATABASE=${DB_NAME}/g" "$env_file"
-    sed_in_place "s/# DB_USERNAME=root/DB_USERNAME=${DB_USER}/g" "$env_file"
+    sed_in_place "s/# DB_DATABASE=freescout/DB_DATABASE=${DB_NAME}/g" "$env_file"
+    sed_in_place "s/# DB_USERNAME=freescout/DB_USERNAME=${DB_USER}/g" "$env_file"
     sed_in_place "s/# DB_PASSWORD=/DB_PASSWORD=${DB_PASS}/g" "$env_file"
     sed_in_place "s|APP_URL=http://localhost|APP_URL=https://${DOMAIN_NAME}|g" "$env_file"
     sed_in_place "s/CACHE_STORE=database/CACHE_STORE=redis/g" "$env_file"
@@ -1277,10 +1288,13 @@ build_and_launch_containers() {
     log_info "Building application image (with BuildKit)..."
     docker compose build app
     
-    log_info "Starting all services..."
-    docker compose up -d
+    # Start only core services — queue workers and cron are deferred until AFTER
+    # migrations run.  Starting them now would cause a fatal error because the
+    # `jobs` table (and other Laravel tables) do not yet exist in the database.
+    log_info "Starting core services (db, redis, app, reverb)..."
+    docker compose up -d db redis app reverb
     
-    log_success "Containers launched"
+    log_success "Core containers launched (queue workers will start after migrations)"
 }
 
 wait_for_database() {
@@ -1567,6 +1581,13 @@ main() {
     wait_for_app_database_connectivity
     install_dependencies
     finalize_installation
+
+    # Queue workers and cron are safe to start now — all migrations have run,
+    # the config cache is warm, and the jobs/failed_jobs tables exist.
+    log_step "Starting Queue Workers & Cron"
+    docker compose up -d queue queue-billing cron
+    log_success "Queue workers and cron scheduler started"
+
     deploy_cloudflared
     
     # Cleanup
