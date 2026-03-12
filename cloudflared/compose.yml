@@ -28,8 +28,13 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
-    command: tunnel run
-    # Host networking: reaches localhost:22 (SSH), localhost:8443 (app),
+    # Force HTTP/2 (TCP) instead of QUIC (UDP).
+    # QUIC sessions silently expire through NAT/OrbStack's network stack after
+    # idle periods, leaving zombie connections that show as "active" in metrics
+    # but stop forwarding traffic. HTTP/2 uses TCP keepalives that keep NAT
+    # entries alive and trigger proper reconnection when a session drops.
+    command: tunnel --protocol http2 run
+    # Host networking: reaches localhost:22 (SSH), localhost:8080 (app nginx),
     # and any other host service without extra routing config.
     network_mode: host
     environment:
