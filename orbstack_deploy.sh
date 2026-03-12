@@ -1260,25 +1260,38 @@ ADMIN_EMAIL=${ADMIN_EMAIL}
 ADMIN_PASSWORD="${ADMIN_PASS}"
 EOF
     
-    # Reverb/Broadcasting — replace the placeholder values already in .env.example
+    # Reverb/Broadcasting — strip ALL existing BROADCAST/REVERB lines then append
+    # a single authoritative block. This is idempotent and immune to sed pattern
+    # mismatches against stale .env.example placeholder values.
     local reverb_app_id reverb_app_key reverb_app_secret
     reverb_app_id=$(openssl rand -hex 8)
     reverb_app_key=$(openssl rand -hex 16)
     reverb_app_secret=$(openssl rand -hex 16)
 
-    sed_in_place "s|^BROADCAST_CONNECTION=.*|BROADCAST_CONNECTION=reverb|g" "$env_file"
-    sed_in_place "s|^REVERB_APP_ID=.*|REVERB_APP_ID=${reverb_app_id}|g" "$env_file"
-    sed_in_place "s|^REVERB_APP_KEY=.*|REVERB_APP_KEY=${reverb_app_key}|g" "$env_file"
-    sed_in_place "s|^REVERB_APP_SECRET=.*|REVERB_APP_SECRET=${reverb_app_secret}|g" "$env_file"
-    sed_in_place "s|^REVERB_HOST=.*|REVERB_HOST=reverb|g" "$env_file"
-    sed_in_place "s|^REVERB_PORT=.*|REVERB_PORT=8080|g" "$env_file"
-    sed_in_place "s|^REVERB_SCHEME=.*|REVERB_SCHEME=http|g" "$env_file"
-    sed_in_place "s|^REVERB_SERVER_HOST=.*|REVERB_SERVER_HOST=\"${DOMAIN_NAME}\"|g" "$env_file"
-    sed_in_place "s|^REVERB_SERVER_PORT=.*|REVERB_SERVER_PORT=443|g" "$env_file"
-    sed_in_place "s|^VITE_REVERB_APP_KEY=.*|VITE_REVERB_APP_KEY=\"${reverb_app_key}\"|g" "$env_file"
-    sed_in_place "s|^VITE_REVERB_HOST=.*|VITE_REVERB_HOST=\"${DOMAIN_NAME}\"|g" "$env_file"
-    sed_in_place "s|^VITE_REVERB_PORT=.*|VITE_REVERB_PORT=443|g" "$env_file"
-    sed_in_place "s|^VITE_REVERB_SCHEME=.*|VITE_REVERB_SCHEME=https|g" "$env_file"
+    grep -vE '^(BROADCAST_CONNECTION=|REVERB_|VITE_REVERB_|# REVERB|# Reverb|# In Docker.*REVERB)' "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
+
+    cat >> "$env_file" <<EOF
+
+#===============================================================================
+# BROADCASTING (Reverb WebSockets)
+#===============================================================================
+BROADCAST_CONNECTION=reverb
+REVERB_APP_ID=${reverb_app_id}
+REVERB_APP_KEY=${reverb_app_key}
+REVERB_APP_SECRET=${reverb_app_secret}
+# Internal Docker hostname of the reverb service
+REVERB_HOST=reverb
+REVERB_PORT=8080
+REVERB_SCHEME=http
+# Public hostname used by the browser / Echo client
+REVERB_SERVER_HOST=${DOMAIN_NAME}
+REVERB_SERVER_PORT=443
+REVERB_SERVER_PATH=""
+VITE_REVERB_APP_KEY="${reverb_app_key}"
+VITE_REVERB_HOST="${DOMAIN_NAME}"
+VITE_REVERB_PORT=443
+VITE_REVERB_SCHEME=https
+EOF
     
     # Google OAuth (if configured)
     if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
