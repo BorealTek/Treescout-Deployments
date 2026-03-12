@@ -622,10 +622,6 @@ generate_nginx_config() {
     log_step "Generating Nginx Configuration (HTTP for tunnel + HTTPS for local access)"
     
     cat > nginx/default.conf <<'EOF'
-upstream reverb_backend {
-    server reverb:8080;
-}
-
 # Plain HTTP on port 8080 — used by the Cloudflare tunnel.
 # The tunnel itself handles TLS between the browser and Cloudflare's edge;
 # no SSL is needed (or desired) between cloudflared and this origin.
@@ -636,6 +632,11 @@ server {
     index index.php index.html;
     client_max_body_size 20M;
 
+    # Use Docker's embedded DNS resolver so upstream hostnames (e.g. reverb)
+    # are re-resolved when containers restart and get new IPs. Without this,
+    # nginx caches the IP at startup and returns 502 after any container restart.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
     # Gzip — reduces 153KB CSS to ~30KB, JS chunks proportionally
     gzip            on;
     gzip_vary       on;
@@ -643,9 +644,12 @@ server {
     gzip_types      text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
     gzip_min_length 256;
 
-    # Proxy WebSocket requests to Reverb container
+    # WebSocket proxy to Reverb container.
+    # Using a variable for proxy_pass forces nginx to re-resolve the hostname
+    # via the resolver above on each request, not just at startup.
     location /app/ {
-        proxy_pass http://reverb_backend;
+        set $reverb_upstream http://reverb:8080;
+        proxy_pass $reverb_upstream;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -720,8 +724,11 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
 
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
     location /app/ {
-        proxy_pass http://reverb_backend;
+        set $reverb_upstream http://reverb:8080;
+        proxy_pass $reverb_upstream;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
