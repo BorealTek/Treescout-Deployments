@@ -9,6 +9,9 @@ nginx/ssl/
 *.pem
 *.key
 
+# Ignore local Cloudflared credentials
+cloudflared/.env
+
 # Ignore system files
 .DS_Store
 Thumbs.db
