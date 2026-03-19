@@ -182,6 +182,29 @@ ACTION1_MANAGE_CLIENT_ID=""
 ACTION1_MANAGE_CLIENT_SECRET=""
 
 #===============================================================================
+# GCP SECRET MANAGER  (Recommended for production)
+#===============================================================================
+# Pull sensitive credentials from GCP Secret Manager instead of storing them
+# in plaintext in deploy.conf.  Set USE_GCP_SECRET_MANAGER="true" to enable.
+#
+# Prerequisites:
+#   1. gcloud CLI authenticated (or Compute Engine default service account)
+#   2. IAM role on the SA: roles/secretmanager.secretAccessor
+#
+# Create secrets once (run from any authenticated workstation):
+#   echo -n 'ghp_yourtoken'  | gcloud secrets create freescout-repo-token    --data-file=- --replication-policy=automatic
+#   echo -n 'StrongRootPass' | gcloud secrets create freescout-db-root-pass  --data-file=- --replication-policy=automatic
+#   echo -n 'StrongAppPass'  | gcloud secrets create freescout-db-pass       --data-file=- --replication-policy=automatic
+#   echo -n 'StrongAdmin'    | gcloud secrets create freescout-admin-pass    --data-file=- --replication-policy=automatic
+#
+# Values in deploy.conf are used as fallback if a secret cannot be fetched.
+USE_GCP_SECRET_MANAGER="false"
+REPO_TOKEN_SECRET="freescout-repo-token"
+DB_ROOT_PASS_SECRET="freescout-db-root-pass"
+DB_PASS_SECRET="freescout-db-pass"
+ADMIN_PASS_SECRET="freescout-admin-pass"
+
+#===============================================================================
 # ADVANCED & MODULES
 #===============================================================================
 

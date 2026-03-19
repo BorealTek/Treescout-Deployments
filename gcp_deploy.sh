@@ -64,6 +64,7 @@ GCP_INSTANCE_SUBNET=""
 GCP_INSTANCE_IP_INTERNAL=""
 GCP_INSTANCE_IP_EXTERNAL=""
 GCP_IS_RUNNING_IN_GCP=false
+AUTO_APPROVE=false           # Set by --yes/-y flag or CI=true environment variable
 
 #===============================================================================
 # UTILITY FUNCTIONS
@@ -199,10 +200,14 @@ load_config() {
     if [ "${ALLOWED_SOURCE_RANGES:-}" = "0.0.0.0/0" ]; then
         log_warning "ALLOWED_SOURCE_RANGES is 0.0.0.0/0 — the application will be open to the entire internet"
         log_info "For production, restrict to known CIDRs in deploy.conf (ALLOWED_SOURCE_RANGES)"
-        read -p "Continue with unrestricted access? (y/n) " -n 1 -r; echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            log_warning "Deployment cancelled — update ALLOWED_SOURCE_RANGES and retry"
-            exit 0
+        if [ "$AUTO_APPROVE" = true ]; then
+            log_info "Unrestricted access auto-approved (--yes / CI mode)"
+        else
+            read -p "Continue with unrestricted access? (y/n) " -n 1 -r; echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                log_warning "Deployment cancelled — update ALLOWED_SOURCE_RANGES and retry"
+                exit 0
+            fi
         fi
     elif [ -z "${ALLOWED_SOURCE_RANGES:-}" ]; then
         log_error "ALLOWED_SOURCE_RANGES is empty — set to a CIDR range or 0.0.0.0/0 to allow all"
@@ -341,6 +346,46 @@ setup_monitoring() {
 }
 
 #===============================================================================
+# GCP SECRET MANAGER
+#===============================================================================
+
+pull_gcp_secrets() {
+    if [ "${USE_GCP_SECRET_MANAGER:-false}" != "true" ]; then
+        return 0
+    fi
+
+    log_step "Pulling Secrets from GCP Secret Manager"
+
+    if ! command_exists gcloud; then
+        log_error "USE_GCP_SECRET_MANAGER=true but gcloud CLI not found — cannot pull secrets"
+        log_info "Install gcloud SDK: https://cloud.google.com/sdk/docs/install"
+        exit 1
+    fi
+
+    local secrets_pulled=0
+
+    _pull_one_secret() {
+        local var_name=$1
+        local secret_name=$2
+        local value
+        if value=$(gcloud secrets versions access latest --secret="$secret_name" 2>/dev/null); then
+            export "$var_name=$value"
+            log_success "Pulled $var_name from Secret Manager secret: $secret_name"
+            (( secrets_pulled++ )) || true
+        else
+            log_warning "Could not pull secret '$secret_name' — falling back to deploy.conf value"
+        fi
+    }
+
+    [ -n "${REPO_TOKEN_SECRET:-}" ]   && _pull_one_secret "REPO_TOKEN"   "$REPO_TOKEN_SECRET"
+    [ -n "${DB_ROOT_PASS_SECRET:-}" ] && _pull_one_secret "DB_ROOT_PASS" "$DB_ROOT_PASS_SECRET"
+    [ -n "${DB_PASS_SECRET:-}" ]      && _pull_one_secret "DB_PASS"      "$DB_PASS_SECRET"
+    [ -n "${ADMIN_PASS_SECRET:-}" ]   && _pull_one_secret "ADMIN_PASS"   "$ADMIN_PASS_SECRET"
+
+    log_success "$secrets_pulled secret(s) pulled from GCP Secret Manager"
+}
+
+#===============================================================================
 # GCP HEALTH CHECK
 #===============================================================================
 
@@ -455,12 +500,14 @@ show_summary() {
 
     echo ""
     log_info "Access:"
-    if [ "$GCP_INSTANCE_IP_EXTERNAL" != "NO_EXTERNAL_IP" ]; then
+    if [ "$GCP_IS_RUNNING_IN_GCP" = true ] && [ -n "$GCP_INSTANCE_IP_EXTERNAL" ] && [ "$GCP_INSTANCE_IP_EXTERNAL" != "NO_EXTERNAL_IP" ]; then
         log_code "  HTTPS: https://$GCP_INSTANCE_IP_EXTERNAL"
         log_code "  Or: https://$DOMAIN_NAME (if DNS configured)"
-    else
+    elif [ "$GCP_IS_RUNNING_IN_GCP" = true ]; then
         log_code "  SSH: gcloud compute ssh $GCP_INSTANCE_NAME --zone=$GCP_ZONE"
         log_code "  Internal: https://$GCP_INSTANCE_IP_INTERNAL"
+    else
+        log_code "  HTTPS: https://$DOMAIN_NAME (configure DNS to point to your GCP external IP)"
     fi
 
     echo ""
@@ -472,15 +519,28 @@ show_summary() {
 }
 
 main() {
+    # Parse flags
+    for arg in "$@"; do
+        case "$arg" in
+            --yes|-y) AUTO_APPROVE=true ;;
+        esac
+    done
+    # Honour standard CI environment variables
+    if [ "${CI:-false}" = "true" ] || [ "${NONINTERACTIVE:-false}" = "true" ]; then
+        AUTO_APPROVE=true
+    fi
+
     show_banner
 
     log_info "FreeScout GCP Deployer v$SCRIPT_VERSION"
+    [ "$AUTO_APPROVE" = true ] && log_info "Non-interactive mode active (--yes / CI=true)"
     echo ""
 
     # Run checks and setup
     health_check_gcp
     detect_gcp_environment
     load_config
+    pull_gcp_secrets
 
     # Create GCP-specific resources
     if [ "${EXPOSE_PUBLIC_PORTS:-true}" = "true" ]; then
@@ -495,11 +555,15 @@ main() {
     show_summary
 
     echo ""
-    read -p "Proceed with Docker deployment? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        log_warning "Deployment cancelled"
-        exit 0
+    if [ "$AUTO_APPROVE" = true ]; then
+        log_info "Proceeding with Docker deployment (auto-approved)"
+    else
+        read -p "Proceed with Docker deployment? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_warning "Deployment cancelled"
+            exit 0
+        fi
     fi
 
     # Execute docker_deploy.sh

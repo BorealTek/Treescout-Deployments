@@ -17,7 +17,7 @@
 set -uo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly CONFIG_FILE="${1:-${SCRIPT_DIR}/deploy.conf}"
+readonly CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
 
 # Colors
 readonly RED='\033[38;5;196m'
@@ -32,6 +32,7 @@ readonly NC='\033[0m'
 ERRORS=0
 WARNINGS=0
 NOTES=0
+AUTO_APPROVE=false
 
 #===============================================================================
 # LOGGING
@@ -84,13 +85,16 @@ validate_file_exists() {
 
 validate_key() {
     local key=$1
-    local value
-    value=$(grep "^${key}=" "$CONFIG_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'") || true
-
-    if [ -z "$value" ]; then
-        return 1  # Not found or empty
+    # Returns: 0=found and non-empty, 1=key present but empty, 2=key absent from file
+    if ! grep -q "^${key}=" "$CONFIG_FILE" 2>/dev/null; then
+        return 2
     fi
-    return 0  # Found
+    local value
+    value=$(grep "^${key}=" "$CONFIG_FILE" | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    if [ -z "$value" ]; then
+        return 1
+    fi
+    return 0
 }
 
 get_value() {
@@ -101,22 +105,14 @@ get_value() {
 validate_required() {
     local key=$1
     local description=$2
+    local rc=0
+    validate_key "$key" || rc=$?
 
-    if validate_key "$key"; then
-        local value
-        value=$(get_value "$key")
-
-        if [ -z "$value" ] || [ "$value" = "" ]; then
-            log_error "$description is empty: $key="
-            return 1
-        fi
-
-        log_success "$description: $key"
-        return 0
-    else
-        log_error "$description is missing: $key"
-        return 1
-    fi
+    case "$rc" in
+        0) log_success "$description: $key" ; return 0 ;;
+        1) log_error "$description is empty: $key=" ; return 1 ;;
+        2) log_error "$description is missing from config: $key" ; return 1 ;;
+    esac
 }
 
 validate_password() {
@@ -293,6 +289,16 @@ validate_boolean() {
 #===============================================================================
 
 main() {
+    # Parse flags
+    for arg in "$@"; do
+        case "$arg" in
+            --yes|-y) AUTO_APPROVE=true ;;
+        esac
+    done
+    if [ "${CI:-false}" = "true" ] || [ "${NONINTERACTIVE:-false}" = "true" ]; then
+        AUTO_APPROVE=true
+    fi
+
     log_header "FreeScout GCP Configuration Validator"
 
     echo ""
@@ -304,7 +310,7 @@ main() {
 
     # Critical fields
     echo -e "${YELLOW}2. Validating CRITICAL settings (must fix before deploy)...${NC}"
-    validate_required "DOMAIN_NAME" "Domain Name"
+    validate_domain "DOMAIN_NAME" "Domain Name"
     validate_password "ADMIN_PASS" "Admin Password" 8
     validate_password "DB_ROOT_PASS" "Database Root Password" 8
     validate_password "DB_PASS" "Database User Password" 8
@@ -398,11 +404,15 @@ main() {
     if [ $WARNINGS -gt 0 ]; then
         echo -e "${YELLOW}⚠ Configuration has issues (warnings above)${NC}"
         echo ""
-        read -p "Proceed with deployment anyway? (y/n) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo "Cancelled. Review and fix warnings, then try again."
-            exit 0
+        if [ "$AUTO_APPROVE" = true ]; then
+            log_note "Proceeding past warnings (auto-approved via --yes / CI=true)"
+        else
+            read -p "Proceed with deployment anyway? (y/n) " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                echo "Cancelled. Review and fix warnings, then try again."
+                exit 0
+            fi
         fi
     fi
 
