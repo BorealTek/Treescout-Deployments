@@ -1,0 +1,282 @@
+#===============================================================================
+# FreeScout GCP Deployment Configuration
+# Copy this file to 'deploy.conf' and customize for your GCP environment.
+#
+# This configuration is optimized for Google Cloud Platform (GCP):
+# - Compute Engine instances (e2-standard-2 or larger)
+# - Cloud SQL for managed databases (optional)
+# - Cloud Load Balancer for HTTPS/SSL
+# - GCP Firewall rules for network access
+#===============================================================================
+
+#===============================================================================
+# INSTALLATION SETTINGS
+#===============================================================================
+
+# Git Repository to deploy from
+GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
+GIT_BRANCH="laravel-11-foundation"
+
+# Installation path on the GCP server (system directory, not home)
+DEFAULT_INSTALL_DIR="/opt/freescout-docker"
+
+# GCP Project ID (auto-detected if running gcp_deploy.sh, but can override)
+GCP_PROJECT_ID=""
+
+# GCP Compute Zone (auto-detected if running gcp_deploy.sh)
+GCP_ZONE="us-central1-a"
+
+#===============================================================================
+# NETWORK SETTINGS
+#===============================================================================
+
+# Domain name for the application
+# Options:
+#   1. GCP Cloud Load Balancer IP: <EXTERNAL_IP>.nip.io (temporary)
+#   2. Custom domain: tickets.yourcompany.com (requires DNS configuration)
+#   3. GCP Cloud Armor: Use with gcloud for DDoS protection
+DOMAIN_NAME="freescout.example.com"
+
+# PUBLIC ACCESS (required for GCP instances)
+# If running on Google Cloud, you typically want:
+#   - GCP Cloud Load Balancer (handles SSL, auto-scaling, DDoS protection)
+#   - Or: GCP Armor + Compute Engine public IP
+#   - Or: Google Cloud NAT for outbound-only (internal access only)
+#
+# For testing: expose ports directly via GCP Firewall Rules
+# For production: use Cloud Load Balancer (automatic SSL cert via Cloud Armor/Cloudflare)
+EXPOSE_PUBLIC_PORTS="true"      # Set to "false" for internal-only deployment
+
+# GCP Firewall Rule Name (created by gcp_deploy.sh)
+GCP_FIREWALL_RULE_NAME="allow-freescout-https"
+
+# IP addresses allowed to access the application
+# Format: comma-separated list of CIDR blocks
+# Examples:
+#   - "0.0.0.0/0"                    (anyone, not recommended for prod)
+#   - "10.0.0.0/8"                   (GCP internal network)
+#   - "203.0.113.0/24"               (your office subnet)
+#   - "203.0.113.5/32,203.0.113.6/32" (specific IPs)
+ALLOWED_SOURCE_RANGES="0.0.0.0/0"
+
+# Docker Network Subnet (Avoid conflicts with existing GCP VPC)
+DOCKER_SUBNET="172.20.0.0/16"
+
+#===============================================================================
+# DATABASE SETTINGS
+#===============================================================================
+# OPTION A: Embedded MariaDB in Docker (simpler, single-VM)
+# OPTION B: Google Cloud SQL (managed, production-recommended)
+#
+# This config defaults to embedded. To use Cloud SQL, modify after deploy:
+#   - Create Cloud SQL instance via GCP Console
+#   - Update DB_HOST to Cloud SQL private IP
+#   - Configure Cloud SQL Auth proxy or VPC Service Controls
+
+# Database host (localhost for embedded Docker; update for Cloud SQL)
+DB_HOST="db"
+
+# Database root password (CHANGE THIS!)
+DB_ROOT_PASS="ChangeMe_RootPassword123!"
+
+# Database application user
+DB_USER="freescout"
+DB_PASS="ChangeMe_AppPassword123!"
+DB_NAME="freescout"
+
+#===============================================================================
+# DEFAULT USERS (Created on fresh install)
+#===============================================================================
+
+# 1. Admin User (Full System Access)
+ADMIN_EMAIL="admin@example.com"
+ADMIN_PASS="ChangeMe_AdminPassword123!"
+ADMIN_FIRST_NAME="System"
+ADMIN_LAST_NAME="Administrator"
+
+# 2. Agent User (Standard Support Access)
+AGENT_EMAIL="agent@example.com"
+AGENT_PASS="ChangeMe_AgentPassword123!"
+AGENT_FIRST_NAME="Support"
+AGENT_LAST_NAME="Agent"
+
+# 3. Finance User (Billing & Invoice Access)
+FINANCE_EMAIL="finance@example.com"
+FINANCE_PASS="ChangeMe_FinancePassword123!"
+FINANCE_FIRST_NAME="Finance"
+FINANCE_LAST_NAME="Manager"
+
+# 4. Reporter User (Read-Only Access)
+REPORTER_EMAIL="reporter@example.com"
+REPORTER_PASS="ChangeMe_ReporterPassword123!"
+REPORTER_FIRST_NAME="Report"
+REPORTER_LAST_NAME="Viewer"
+
+#===============================================================================
+# SSL/TLS SETTINGS
+#===============================================================================
+# GCP supports multiple SSL/TLS options:
+#
+# 1. Self-Signed Certificates (default, development/testing)
+#    - Generated on initial deploy
+#    - Works with load balancers that do HTTPS termination
+#    - Clients will warn about untrusted cert
+#
+# 2. Google Managed Certificates (production, requires Cloud Load Balancer)
+#    - Automatically provisioned and renewed
+#    - Requires public domain with DNS pointing to load balancer IP
+#    - Configure via: gcloud compute ssl-certificates create
+#
+# 3. Let's Encrypt via Certbot (requires public IP + domain)
+#    - Install certbot in app container
+#    - Setup auto-renewal via cron
+#
+# Default: Self-signed (generated by docker_deploy.sh)
+USE_MANAGED_SSL="false"  # Set to true if using GCP managed certificates
+
+# If using GCP managed certificates, specify the certificate name
+# GCP_SSL_CERTIFICATE_NAME="freescout-ssl-cert"
+
+# If using Let's Encrypt, provide your email for certificate notifications
+LETSENCRYPT_EMAIL=""
+
+#===============================================================================
+# INTEGRATIONS (Optional)
+#===============================================================================
+
+# Google OAuth (for GCP-native authentication)
+# Create credentials at: https://console.cloud.google.com/credentials
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+GOOGLE_ADMIN_EMAILS=""
+GOOGLE_ALLOWED_DOMAINS=""
+
+# Google Workspace Admin SDK (for Google Workspace sync via GoogleAdmin module)
+# Create service account at: https://console.cloud.google.com/iam-admin/serviceaccounts
+GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON=""
+
+#===============================================================================
+# Action1 RMM API Keys (3 Roles — Least Privilege)
+#===============================================================================
+# Each role has a separate OAuth2 Client ID + Client Secret, scoped to only
+# the permissions that role needs. Create these in the Action1 dashboard.
+#
+# Sync  (Role A) — Read-only: View Endpoints, Software Inventory, Groups
+# Run   (Role B) — Executor:  Run pre-vetted scripts only, View Automation History
+# Manage(Role C) — Admin/Dev: Create/modify/delete scripts, Manage Software Repo
+#
+# Region: us | eu | ap (shared across all roles)
+ACTION1_REGION="us"
+
+ACTION1_SYNC_CLIENT_ID=""
+ACTION1_SYNC_CLIENT_SECRET=""
+
+ACTION1_RUN_CLIENT_ID=""
+ACTION1_RUN_CLIENT_SECRET=""
+
+ACTION1_MANAGE_CLIENT_ID=""
+ACTION1_MANAGE_CLIENT_SECRET=""
+
+#===============================================================================
+# ADVANCED & MODULES
+#===============================================================================
+
+# GitHub Token — REQUIRED for all BorealTek private module repos
+# The core app repo (Scotchmcdonald/freescout) is PUBLIC and does not need this.
+# Create a Personal Access Token at: https://github.com/settings/tokens
+# Required scopes: repo (full control of private repositories)
+# Store securely: use GCP Secret Manager in production
+export REPO_TOKEN=""
+
+# Modules to install for this deployment.
+# Format: "ModuleName|RepoURL|REPO_TOKEN|Branch"
+#
+# DEPLOYMENT PROFILES:
+#
+# FULL (BorealTek internal — all modules):
+MODULES_TO_INSTALL=(
+    "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
+    "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
+    "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+    "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
+    "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
+    "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+    "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
+    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
+    "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
+    "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
+    "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
+    "TreeScoutDeploymentManager|https://github.com/BorealTek/TreeScoutDeploymentManager-Module.git|REPO_TOKEN|main"
+    "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
+)
+
+# To use a different profile, uncomment and edit:
+#
+# CORE-MSP (helpdesk + CRM + billing + assets + portal):
+# MODULES_TO_INSTALL=(
+#     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+#     "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+#     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+#     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+#     "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
+# )
+#
+# HELPDESK-ONLY (CRM + portal + knowledge base):
+# MODULES_TO_INSTALL=(
+#     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+#     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+#     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+# )
+
+#===============================================================================
+# GCP-SPECIFIC MONITORING & LOGGING
+#===============================================================================
+
+# Enable GCP Cloud Logging (Docker logs shipped to Cloud Logging)
+# Requires: gcloud auth application-default login
+# Creates log entries in: https://console.cloud.google.com/logs
+ENABLE_GCP_LOGGING="true"
+
+# GCP Cloud Monitoring (metrics for CPU, memory, disk)
+# Auto-enabled if gcp_deploy.sh detects GCP environment
+ENABLE_GCP_MONITORING="true"
+
+# Send container logs to Cloud Logging (via Google Cloud Ops Agent)
+# Set to "true" if you've installed the Ops Agent on the Compute Engine instance
+SHIP_LOGS_TO_CLOUD_LOGGING="false"
+
+#===============================================================================
+# BACKUP & DISASTER RECOVERY
+#===============================================================================
+
+# Enable automated database backups to GCP Cloud Storage
+# Requires: gsutil configured and authenticated
+ENABLE_GCP_BACKUPS="false"
+
+# GCP Cloud Storage bucket for database backups
+# Format: gs://my-bucket-name/freescout/
+GCP_BACKUP_BUCKET=""
+
+# Backup schedule (cron format, runs nightly by default)
+# Default: 02:00 UTC daily
+BACKUP_SCHEDULE="0 2 * * *"
+
+#===============================================================================
+# MAINTENANCE & DEBUGGING
+#===============================================================================
+
+# Enable verbose logging during deployment
+VERBOSE_LOGGING="false"
+
+# Keep deployment artifacts (logs, build cache) for debugging
+KEEP_ARTIFACTS="false"
+
+# Automatically reuse existing database on redeploy
+# Set to "true" to preserve data when re-running docker_deploy.sh
+REUSE_DB="true"
+
+# Preserve admin password on redeploy (if DB already exists)
+PRESERVE_ADMIN_PASS="true"
