@@ -45,7 +45,8 @@ DOMAIN_NAME="freescout.example.com"
 #
 # For testing: expose ports directly via GCP Firewall Rules
 # For production: use Cloud Load Balancer (automatic SSL cert via Cloud Armor/Cloudflare)
-EXPOSE_PUBLIC_PORTS="true"      # Set to "false" for internal-only deployment
+# Set to "false" for internal-only deployment
+EXPOSE_PUBLIC_PORTS="true"
 
 # GCP Firewall Rule Name (created by gcp_deploy.sh)
 GCP_FIREWALL_RULE_NAME="allow-freescout-https"
@@ -85,7 +86,7 @@ DB_PASS="ChangeMe_AppPassword123!"
 DB_NAME="freescout"
 
 #===============================================================================
-# DEFAULT USERS (Created on fresh install)
+# DEFAULT/TESTING USERS (Created on fresh install)
 #===============================================================================
 
 # 1. Admin User (Full System Access)
@@ -150,10 +151,6 @@ GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
 GOOGLE_ADMIN_EMAILS=""
 GOOGLE_ALLOWED_DOMAINS=""
-
-# Google Workspace Admin SDK (for Google Workspace sync via GoogleAdmin module)
-# Create service account at: https://console.cloud.google.com/iam-admin/serviceaccounts
-GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON=""
 
 #===============================================================================
 # Action1 RMM API Keys (3 Roles — Least Privilege)

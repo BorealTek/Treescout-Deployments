@@ -332,7 +332,7 @@ health_check_gcp() {
     log_step "Running GCP Health Checks"
 
     # Check required tools
-    local required_tools=("docker" "docker-compose" "curl" "git")
+    local required_tools=("docker" "curl" "git")
     local missing_tools=()
 
     for tool in "${required_tools[@]}"; do
@@ -348,6 +348,17 @@ health_check_gcp() {
     fi
 
     log_success "All required tools present"
+
+    # Check Docker Compose (v2 plugin preferred, v1 standalone fallback)
+    if docker compose version >/dev/null 2>&1; then
+        log_success "Docker Compose v2 found (docker compose)"
+    elif command_exists docker-compose; then
+        log_success "Docker Compose v1 found (docker-compose)"
+    else
+        log_error "Docker Compose not found — install docker-compose-plugin or update Docker CE"
+        log_info "Install: sudo apt-get install -y docker-compose-plugin"
+        return 1
+    fi
 
     # Check GCP CLI (optional but helpful)
     if command_exists gcloud; then

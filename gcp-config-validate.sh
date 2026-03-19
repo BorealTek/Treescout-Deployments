@@ -12,7 +12,9 @@
 #
 #===============================================================================
 
-set -euo pipefail
+# Note: -e (errexit) is intentionally omitted — this script collects all
+# validation failures before reporting; immediate exit would hide later issues.
+set -uo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly CONFIG_FILE="${1:-${SCRIPT_DIR}/deploy.conf}"
