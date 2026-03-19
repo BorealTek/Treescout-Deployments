@@ -64,7 +64,6 @@ GCP_INSTANCE_SUBNET=""
 GCP_INSTANCE_IP_INTERNAL=""
 GCP_INSTANCE_IP_EXTERNAL=""
 GCP_IS_RUNNING_IN_GCP=false
-CLEANUP_NEEDED=false
 
 #===============================================================================
 # UTILITY FUNCTIONS
@@ -97,10 +96,6 @@ log_code() {
 
 cleanup() {
     local exit_code=$?
-
-    if [ "$CLEANUP_NEEDED" = true ]; then
-        log_warning "Partial deployment detected. Review terminal output for details."
-    fi
 
     if [ $exit_code -ne 0 ]; then
         log_error "GCP deployment failed with exit code $exit_code"
@@ -192,6 +187,25 @@ load_config() {
     # Validate required settings
     if [ -z "${DOMAIN_NAME:-}" ]; then
         log_error "DOMAIN_NAME not set in deploy.conf"
+        exit 1
+    fi
+
+    if [[ "${DOMAIN_NAME:-}" =~ ^(freescout\.example\.com|example\.com|your-domain\.com)$ ]]; then
+        log_error "DOMAIN_NAME is still the template placeholder: $DOMAIN_NAME"
+        log_info "Set DOMAIN_NAME to your actual domain or GCP external IP in deploy.conf"
+        exit 1
+    fi
+
+    if [ "${ALLOWED_SOURCE_RANGES:-}" = "0.0.0.0/0" ]; then
+        log_warning "ALLOWED_SOURCE_RANGES is 0.0.0.0/0 — the application will be open to the entire internet"
+        log_info "For production, restrict to known CIDRs in deploy.conf (ALLOWED_SOURCE_RANGES)"
+        read -p "Continue with unrestricted access? (y/n) " -n 1 -r; echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_warning "Deployment cancelled — update ALLOWED_SOURCE_RANGES and retry"
+            exit 0
+        fi
+    elif [ -z "${ALLOWED_SOURCE_RANGES:-}" ]; then
+        log_error "ALLOWED_SOURCE_RANGES is empty — set to a CIDR range or 0.0.0.0/0 to allow all"
         exit 1
     fi
 
@@ -295,8 +309,10 @@ setup_cloud_logging() {
     # Configure Docker daemon to use Cloud Logging driver
     # This requires the Google Cloud Ops Agent to be installed on the host
     log_info "Note: Requires Google Cloud Ops Agent on the host"
-    log_info "Install with: sudo curl https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh | sudo bash"
-    log_code "sudo /opt/google-cloud-ops-agent/bin/google-cloud-ops-agent ctl config set gcp-project-id=$GCP_PROJECT_ID"
+    log_info "Install (download-then-verify before executing):"
+    log_code "curl -fsSL https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh -o /tmp/add-ops-agent.sh"
+    log_code "# Review /tmp/add-ops-agent.sh, then:"
+    log_code "sudo bash /tmp/add-ops-agent.sh && sudo apt-get install -y google-cloud-ops-agent"
     log_code "sudo systemctl restart google-cloud-ops-agent"
 }
 
