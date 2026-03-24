@@ -1,3 +1,15 @@
+---
+doc_type: how-to
+owner: "@devops-team"
+reviewers:
+    - "@platform-team"
+last_reviewed: 2026-03-23
+review_cycle_days: 45
+source_paths:
+    - deployment/
+stability: active
+---
+
 # BorealTek Treescout Deployer
 
 Enterprise-grade deployment utilities for the FreeScout Helpdesk application.
@@ -56,7 +68,7 @@ bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployment
 ## ⚠️ Notes
 
 *   **Secrets**: never commit `deploy.conf` to version control.
-*   **Requirements**: 
+*   **Requirements**:
     *   Linux: Docker Engine, Docker Compose
     *   macOS: OrbStack (Recommended) or Docker Desktop
 
