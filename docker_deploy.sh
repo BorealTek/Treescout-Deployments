@@ -2,7 +2,7 @@
 
 #===============================================================================
 # FreeScout Docker Deployer (Ubuntu/Linux)
-# 
+#
 # Enterprise-grade deployment script with:
 # - Bash strict mode (set -euo pipefail)
 # - Trap handlers for cleanup
@@ -73,6 +73,7 @@ CLEANUP_NEEDED=false
 MODULES_TO_INSTALL=(
     "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
     "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
+    "AppHealth|https://github.com/BorealTek/AppHealth-Module.git|REPO_TOKEN|main"
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
     "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
@@ -82,10 +83,11 @@ MODULES_TO_INSTALL=(
     "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "MiddleMan|https://github.com/BorealTek/Treescout-MiddleMan.git|REPO_TOKEN|main"
     "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
     "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
-    "TreeScoutDeploymentManager|https://github.com/BorealTek/TreeScoutDeploymentManager-Module.git|REPO_TOKEN|main"
+    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
 
@@ -134,11 +136,11 @@ cleanup() {
         log_warning "Cleaning up after error..."
         # Add cleanup logic if needed
     fi
-    
+
     if [ $exit_code -ne 0 ]; then
         log_error "Script failed with exit code $exit_code"
     fi
-    
+
     exit $exit_code
 }
 
@@ -168,7 +170,7 @@ safe_read() {
 validate_required_var() {
     local var_name=$1
     local var_value=${2:-}
-    
+
     if [ -z "$var_value" ]; then
         log_error "Required variable '$var_name' is not set"
         exit 1
@@ -181,7 +183,7 @@ validate_required_var() {
 
 preflight_checks() {
     log_step "Running Pre-Flight Checks"
-    
+
     # Check if running as root or with sudo access
     if [ "$(id -u)" -eq 0 ]; then
         if ! command_exists sudo; then
@@ -193,23 +195,23 @@ preflight_checks() {
             exit 1
         fi
     fi
-    
+
     # Check for required tools
     local required_tools=("git" "curl" "openssl")
     local missing_tools=()
-    
+
     for tool in "${required_tools[@]}"; do
         if ! command_exists "$tool"; then
             missing_tools+=("$tool")
         fi
     done
-    
+
     if [ ${#missing_tools[@]} -gt 0 ]; then
         log_warning "Installing missing tools: ${missing_tools[*]}"
         sudo apt-get update -qq
         sudo apt-get install -y -qq "${missing_tools[@]}"
     fi
-    
+
     # Check Docker
     if ! command_exists docker; then
         log_warning "Docker not found. Installing..."
@@ -217,7 +219,7 @@ preflight_checks() {
         sudo sh /tmp/get-docker.sh
         rm /tmp/get-docker.sh
     fi
-    
+
     # Verify Docker is running
     log_info "Verifying Docker daemon status..."
     if ! sudo docker info >/dev/null 2>&1; then
@@ -236,7 +238,7 @@ preflight_checks() {
             log_warning "System memory is below 2GB. Performance may be degraded."
             log_warning "Recommended: 4GB+ for production."
             sleep 2
-        else 
+        else
             log_success "System memory check passed"
         fi
     fi
@@ -244,7 +246,7 @@ preflight_checks() {
     # Enable BuildKit for faster builds
     export DOCKER_BUILDKIT=1
     export COMPOSE_DOCKER_CLI_BUILD=1
-    
+
     log_success "Pre-flight checks passed"
 }
 
@@ -278,7 +280,7 @@ load_or_create_config() {
         if [ -n "${SUDO_USER:-}" ] && [ "$(stat -c '%U' "$CONFIG_FILE" 2>/dev/null)" = "root" ]; then
             chown "$SUDO_USER:$(id -g "$SUDO_USER")" "$CONFIG_FILE"
         fi
-        
+
         log_success "Configuration file found: $CONFIG_FILE"
         # shellcheck disable=SC1090
         source "$CONFIG_FILE"
@@ -286,7 +288,7 @@ load_or_create_config() {
         # Sync config variables to internal variables
         if [ -n "${GIT_REPO_URL:-}" ]; then DEFAULT_REPO="$GIT_REPO_URL"; fi
         if [ -n "${GIT_BRANCH:-}" ]; then DEFAULT_BRANCH="$GIT_BRANCH"; fi
-        
+
         # Ensure array exists if not defined in config
         if [ -z "${MODULES_TO_INSTALL+x}" ]; then
             MODULES_TO_INSTALL=()
@@ -307,7 +309,7 @@ interactive_menu() {
         echo -e "  ${COLOR_PRIMARY}[0]${NC} Exit"
         echo ""
         safe_read "  Enter Selection: " choice
-        
+
         case $choice in
             1) return 0 ;;
             2) return 0 ;;
@@ -324,7 +326,7 @@ interactive_menu() {
 
 save_current_config() {
     log_info "Saving configuration to $CONFIG_FILE..."
-    
+
     # Generate array string for MODULES_TO_INSTALL
     local modules_str=""
     if [ -n "${MODULES_TO_INSTALL+x}" ]; then
@@ -395,7 +397,7 @@ MODULES_TO_INSTALL=(
 ${modules_str})
 
 EOF
-    
+
     if [ -n "${SUDO_USER:-}" ]; then
         chown "$SUDO_USER:$(id -g "$SUDO_USER")" "$CONFIG_FILE"
     fi
@@ -414,10 +416,10 @@ interactive_menu() {
         echo -e "  ${COLOR_PRIMARY}[0]${NC} Exit"
         echo ""
         safe_read "  Enter Selection: " choice
-        
+
         case $choice in
             1) return 0 ;;
-            2) 
+            2)
                 if [ -f "./update.sh" ]; then
                     bash ./update.sh
                     safe_read "Press Enter to continue..." dummy
@@ -466,22 +468,22 @@ interactive_setup() {
     fi
 
     log_step "Interactive Setup"
-    
+
     # Repository configuration
     local current_repo="${GIT_REPO_URL:-$DEFAULT_REPO}"
     echo -e "Repository URL: ${YELLOW}$current_repo${NC}"
     safe_read "Press ENTER to confirm, or paste a new URL: " input_repo
     GIT_REPO_URL="${input_repo:-$current_repo}"
-    
+
     local current_branch="${GIT_BRANCH:-$DEFAULT_BRANCH}"
     echo -e "Branch: ${YELLOW}$current_branch${NC}"
     safe_read "Press ENTER to confirm, or type a new branch: " input_branch
     GIT_BRANCH="${input_branch:-$current_branch}"
     echo ""
-    
+
     # Network configuration
     log_info "Network Configuration"
-    local current_domain="${DOMAIN_NAME:-}" 
+    local current_domain="${DOMAIN_NAME:-}"
     if [ -n "$current_domain" ]; then
         echo -e "Domain Name: ${YELLOW}$current_domain${NC}"
         safe_read "Press ENTER to confirm, or type new domain: " input_domain
@@ -491,7 +493,7 @@ interactive_setup() {
             safe_read "Domain Name: " DOMAIN_NAME
         done
     fi
-    
+
     local current_subnet="${DOCKER_SUBNET:-}"
     if [ -n "$current_subnet" ]; then
          echo -e "Docker Subnet: ${YELLOW}$current_subnet${NC}"
@@ -518,39 +520,39 @@ interactive_setup() {
     fi
     export REPO_TOKEN="${REPO_TOKEN:-}"
     echo ""
-    
+
     # Google OAuth (optional)
     log_info "Google OAuth (Optional)"
     local current_client_id="${GOOGLE_CLIENT_ID:-}"
     echo -e "Google Client ID: ${YELLOW}${current_client_id:-<not set>}${NC}"
     safe_read "Enter Client ID (or ENTER to skip/keep): " input_client_id
-    
+
     if [ -n "$input_client_id" ]; then
          GOOGLE_CLIENT_ID="$input_client_id"
     fi
-    
+
     if [ -n "$GOOGLE_CLIENT_ID" ]; then
         safe_read "Google Client Secret [${GOOGLE_CLIENT_SECRET:0:5}...]: " input_secret
         GOOGLE_CLIENT_SECRET="${input_secret:-$GOOGLE_CLIENT_SECRET}"
-        
+
         safe_read "Google Admin Emails [${GOOGLE_ADMIN_EMAILS}]: " input_emails
         GOOGLE_ADMIN_EMAILS="${input_emails:-$GOOGLE_ADMIN_EMAILS}"
-        
+
         safe_read "Allowed Domains [${GOOGLE_ALLOWED_DOMAINS}]: " input_domains
         GOOGLE_ALLOWED_DOMAINS="${input_domains:-$GOOGLE_ALLOWED_DOMAINS}"
     fi
     echo ""
-    
+
     # Sample data seeding
     log_info "Sample Data Seeding"
     if [ "$REUSE_DB" = true ]; then
         log_warning "WARNING: Reusing existing database"
         log_warning "Seeding may cause conflicts or duplicates"
     fi
-    
+
     local default_seed="N"
     if [ "$SEED_SAMPLE_DATA" = true ]; then default_seed="Y"; fi
-    
+
     safe_read "Seed sample data (Mailboxes, Users, Conversations)? [y/N] (Current: $default_seed) " input_seed
     if [ -z "$input_seed" ]; then
          : # Keep current
@@ -567,7 +569,7 @@ interactive_setup() {
     if [[ "$save_opt" =~ ^[Yy]$ ]]; then
         save_current_config
     fi
-    
+
     # Configuration summary
     echo "────────────────────────────────────────────────────────────"
     echo -e "CONFIGURATION SUMMARY:"
@@ -586,16 +588,16 @@ interactive_setup() {
 
 check_existing_installation() {
     local existing_env="$DEFAULT_INSTALL_DIR/.env"
-    
+
     if [ -f "$existing_env" ]; then
         log_warning "Existing installation found at $DEFAULT_INSTALL_DIR"
-        
+
         if [ -t 0 ]; then
             echo ""
             echo "1) Reuse existing database (Keep data)"
             echo "2) Overwrite database (DESTROY ALL DATA)"
             read -rp "Select [1-2]: " reuse_opt || true
-            
+
             case "$reuse_opt" in
                 2)
                     REUSE_DB=false
@@ -611,7 +613,7 @@ check_existing_installation() {
             REUSE_DB=true
             EXISTING_DECISION_MADE=true
         fi
-        
+
         if [ "$REUSE_DB" = true ]; then
             log_info "Loading existing credentials..."
             load_existing_credentials "$existing_env"
@@ -624,7 +626,7 @@ check_existing_installation() {
 
 load_existing_credentials() {
     local env_file=$1
-    
+
     # Load Docker .env credentials
     if [ -f "$env_file" ]; then
         DB_PASS=$(grep "^DB_PASSWORD=" "$env_file" | cut -d '=' -f2 || echo "")
@@ -632,14 +634,14 @@ load_existing_credentials() {
         DB_USER=$(grep "^DB_USER=" "$env_file" | cut -d '=' -f2 || echo "")
         DB_NAME=$(grep "^DB_DATABASE=" "$env_file" | cut -d '=' -f2 || echo "")
     fi
-    
+
     # Load Laravel .env credentials
     local laravel_env="$DEFAULT_INSTALL_DIR/src/.env"
     if [ -f "$laravel_env" ]; then
         local existing_email existing_pass
         existing_email=$(grep "^ADMIN_EMAIL=" "$laravel_env" | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
         existing_pass=$(grep "^ADMIN_PASSWORD=" "$laravel_env" | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
-        
+
         if [ -n "$existing_email" ]; then ADMIN_EMAIL=$existing_email; fi
         if [ -n "$existing_pass" ]; then
             ADMIN_PASS=$existing_pass
@@ -655,12 +657,12 @@ load_existing_credentials() {
 decommission_existing() {
     if [ -d "$DEFAULT_INSTALL_DIR" ] && [ -f "$DEFAULT_INSTALL_DIR/docker-compose.yml" ]; then
         log_step "Decommissioning Existing Installation"
-        
+
         cd "$DEFAULT_INSTALL_DIR"
-        
+
         # Always prompt for what to do with existing deployment
         log_warning "Existing deployment detected!"
-        
+
         if [ "${EXISTING_DECISION_MADE:-false}" = true ]; then
             log_info "Using previous selection (Reuse Database: $REUSE_DB)"
         else
@@ -671,7 +673,7 @@ decommission_existing() {
             echo "  3) Cancel deployment"
             echo ""
             safe_read "Enter choice [1-3]: " choice
-            
+
             case $choice in
                 1) REUSE_DB=true ;;
                 2) REUSE_DB=false ;;
@@ -679,13 +681,13 @@ decommission_existing() {
                 *) REUSE_DB=true ;;
             esac
         fi
-        
+
         if [ "$REUSE_DB" = true ]; then
             log_info "Reusing existing data - stopping containers only..."
             sudo docker compose down 2>/dev/null || true
         else
             log_warning "Nuking everything - all data will be lost!"
-            
+
             if [ "${EXISTING_DECISION_MADE:-false}" = false ]; then
                 safe_read "Type 'yes' to confirm: " confirm
                 if [ "$confirm" != "yes" ]; then
@@ -700,10 +702,10 @@ decommission_existing() {
             sudo rm -rf src
             log_success "Everything nuked"
         fi
-        
+
         log_info "Pruning unused networks..."
         sudo docker network prune -f >/dev/null 2>&1 || true
-        
+
         log_success "Decommissioning complete"
     else
         # No existing installation - treat as fresh install regardless of REUSE_DB
@@ -716,17 +718,17 @@ decommission_existing() {
 
 setup_directories() {
     log_step "Setting Up Directory Structure"
-    
+
     sudo mkdir -p "$DEFAULT_INSTALL_DIR/nginx"
     sudo chown -R "$USER:$USER" "$DEFAULT_INSTALL_DIR"
     cd "$DEFAULT_INSTALL_DIR"
-    
+
     log_success "Directories created"
 }
 
 generate_dockerfile() {
     log_step "Generating Dockerfile"
-    
+
     cat > Dockerfile <<'EOF'
 FROM serversideup/php:8.3-fpm-nginx
 
@@ -776,13 +778,13 @@ fi\n" > /etc/entrypoint.d/99-fix-docker-sock.sh && \
 # Note: We run as root to allow the entrypoint script to fix permissions.
 # The base image handles dropping privileges to www-data for PHP-FPM.
 EOF
-    
+
     log_success "Dockerfile generated"
 }
 
 generate_nginx_config() {
     log_step "Generating Nginx Configuration (HTTPS + WebSocket)"
-    
+
     cat > nginx/default.conf <<'EOF'
 upstream reverb_backend {
     server reverb:8080;
@@ -794,14 +796,14 @@ server {
     root /var/www/html/public;
     index index.php index.html;
     client_max_body_size 20M;
-    
+
     # SSL Configuration
     ssl_certificate /etc/nginx/ssl/cert.pem;
     ssl_certificate_key /etc/nginx/ssl/key.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
-    
+
     # Proxy WebSocket requests to Reverb container
     location /app/ {
         proxy_pass http://reverb_backend;
@@ -814,12 +816,12 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 86400;
     }
-    
+
     # PHP Application
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }
-    
+
     location ~ \.php$ {
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
         fastcgi_pass 127.0.0.1:9000;
@@ -829,53 +831,53 @@ server {
         fastcgi_param PATH_INFO $fastcgi_path_info;
         fastcgi_param HTTPS on;
     }
-    
+
     # Static assets
     location ~* ^/storage/attachment/ {
         expires 1M;
         access_log off;
         try_files $uri $uri/ /index.php?$query_string;
     }
-    
+
     location ~* ^/(?:css|js)/.*\.(?:css|js)$ {
         expires 2d;
         access_log off;
         add_header Cache-Control "public, must-revalidate";
     }
-    
+
     # Security
     location ~ /\. {
         deny all;
     }
 }
 EOF
-    
+
     log_success "Nginx config generated"
 }
 
 generate_ssl_certificates() {
     log_step "Generating Self-Signed SSL Certificates"
-    
+
     mkdir -p nginx/ssl
-    
+
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout nginx/ssl/key.pem \
         -out nginx/ssl/cert.pem \
         -subj "/C=US/ST=State/L=City/O=FreeScout/CN=${DOMAIN_NAME}" \
         2>&1 | grep -v "writing new private key" || true
-    
+
     # Verify certificates
     if [ ! -f "nginx/ssl/cert.pem" ] || [ ! -f "nginx/ssl/key.pem" ]; then
         log_error "Failed to generate SSL certificates"
         exit 1
     fi
-    
+
     log_success "SSL certificates generated"
 }
 
 generate_docker_env() {
     log_step "Generating Docker Environment File"
-    
+
     cat > .env <<EOF
 DB_ROOT_PASSWORD=${DB_ROOT_PASS}
 DB_DATABASE=${DB_NAME}
@@ -893,13 +895,13 @@ EOF
     # Pass through any environment variables ending in _TOKEN, _KEY, or _SECRET
     # This allows passing git access tokens for modules
     env | grep -E '(_TOKEN|_KEY|_SECRET)=' | grep -vE '^(DB_|APP_|REDIS_|GOOGLE_|REVERB_|TUNNEL_)' >> .env || true
-    
+
     log_success "Docker .env generated"
 }
 
 generate_docker_compose() {
     log_step "Generating Docker Compose Configuration"
-    
+
     # Detect Docker socket GID for permission handling
     # This allows the app container to communicate with Docker daemon
     local DOCKER_GID
@@ -910,7 +912,7 @@ generate_docker_compose() {
         DOCKER_GID="999"
         log_warning "Docker socket not found, using default GID: $DOCKER_GID"
     fi
-    
+
     cat > docker-compose.yml <<EOF
 services:
   app:
@@ -1077,13 +1079,13 @@ networks:
 volumes:
   db_data:
 EOF
-    
+
     log_success "Docker Compose config generated"
 }
 
 generate_update_script() {
     log_step "Generating Update Script"
-    
+
     cat > update.sh <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -1114,36 +1116,36 @@ sudo docker compose exec -T app php artisan freescout:clear-cache
 
 echo "✅ Update complete!"
 EOF
-    
+
     chmod +x update.sh
     log_success "Update script generated"
 }
 
 clone_or_update_repo() {
     log_step "Cloning/Updating Repository"
-    
+
     if [ -d "$DEFAULT_INSTALL_DIR/src" ]; then
         log_info "Source folder exists. Syncing..."
-        
+
         cd "$DEFAULT_INSTALL_DIR/src"
         git config --global --add safe.directory "$DEFAULT_INSTALL_DIR/src"
         git remote set-url origin "$GIT_REPO_URL"
         git fetch origin
-        
+
         if ! git checkout "$GIT_BRANCH" 2>/dev/null; then
             git checkout -b "$GIT_BRANCH" "origin/$GIT_BRANCH"
         fi
-        
+
         if ! git pull origin "$GIT_BRANCH"; then
             log_error "Git pull failed! Local changes detected."
-            
+
             if [ -t 0 ]; then
                 echo ""
                 echo "1) Discard local changes (git reset --hard)"
                 echo "2) Nuke & Re-clone (Delete src and download fresh)"
                 echo "3) Exit and fix manually"
                 read -rp "Select [1-3]: " git_opt
-                
+
                 case "$git_opt" in
                     1)
                         log_info "Resetting to origin/$GIT_BRANCH..."
@@ -1166,23 +1168,23 @@ clone_or_update_repo() {
                 exit 1
             fi
         fi
-        
+
         cd ..
     else
         log_info "Cloning branch '$GIT_BRANCH'..."
         git clone -b "$GIT_BRANCH" "$GIT_REPO_URL" src
     fi
-    
+
     log_success "Repository ready"
 }
 
 configure_laravel() {
     log_step "Configuring Laravel Environment"
-    
+
     cp "$DEFAULT_INSTALL_DIR/src/.env.example" "$DEFAULT_INSTALL_DIR/src/.env"
-    
+
     local env_file="$DEFAULT_INSTALL_DIR/src/.env"
-    
+
     # Database configuration
     sed -i "s/APP_NAME=Laravel/APP_NAME=\"BorealTek Treescout\"/g" "$env_file"
     sed -i "s/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/g" "$env_file"
@@ -1191,13 +1193,13 @@ configure_laravel() {
     sed -i "s/# DB_DATABASE=laravel/DB_DATABASE=$DB_NAME/g" "$env_file"
     sed -i "s/# DB_USERNAME=root/DB_USERNAME=$DB_USER/g" "$env_file"
     sed -i "s/# DB_PASSWORD=/DB_PASSWORD=$DB_PASS/g" "$env_file"
-    
-    # App URL and caching  
+
+    # App URL and caching
     sed -i "s|APP_URL=http://localhost|APP_URL=https://$DOMAIN_NAME|g" "$env_file"
     sed -i "s/CACHE_STORE=database/CACHE_STORE=redis/g" "$env_file"
     sed -i "s/SESSION_DRIVER=database/SESSION_DRIVER=redis/g" "$env_file"
     sed -i "s/REDIS_HOST=127.0.0.1/REDIS_HOST=redis/g" "$env_file"
-    
+
     # Admin credentials
     cat >> "$env_file" <<EOF
 
@@ -1225,13 +1227,13 @@ REPORTER_PASSWORD="${REPORTER_PASS:-reporter123456789}"
 REPORTER_FIRST_NAME="${REPORTER_FIRST_NAME:-Report}"
 REPORTER_LAST_NAME="${REPORTER_LAST_NAME:-Viewer}"
 EOF
-    
+
     # Reverb/Broadcasting
     local reverb_app_id reverb_app_key reverb_app_secret
     reverb_app_id=$(openssl rand -hex 8)
     reverb_app_key=$(openssl rand -hex 16)
     reverb_app_secret=$(openssl rand -hex 16)
-    
+
     cat >> "$env_file" <<EOF
 
 # Broadcasting (Reverb)
@@ -1248,7 +1250,7 @@ VITE_REVERB_HOST="${DOMAIN_NAME}"
 VITE_REVERB_PORT=443
 VITE_REVERB_SCHEME=https
 EOF
-    
+
     # Google OAuth (if configured)
     if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
         cat >> "$env_file" <<EOF
@@ -1261,22 +1263,22 @@ GOOGLE_ADMIN_EMAILS="${GOOGLE_ADMIN_EMAILS:-}"
 GOOGLE_ALLOWED_DOMAINS="${GOOGLE_ALLOWED_DOMAINS:-}"
 EOF
     fi
-    
+
     log_success "Laravel environment configured"
 }
 
 setup_storage_permissions() {
     log_step "Setting Up Storage & Permissions"
-    
+
     mkdir -p src/storage/framework/{cache,sessions,views}
     mkdir -p src/storage/logs
     mkdir -p src/storage/app/public
     mkdir -p src/bootstrap/cache
     mkdir -p src/Modules
     mkdir -p src/public/modules
-    
+
     sudo chown -R 33:33 src
-    
+
     log_success "Storage directories ready"
 }
 
@@ -1319,11 +1321,11 @@ install_modules() {
         fi
 
         log_info "Installing module: $name"
-        
+
         local final_url="$repo_url"
         if [ -n "$token_var" ]; then
             local token_val="${!token_var:-}"
-            
+
             if [ -n "$token_val" ]; then
                 # Inject token into URL for HTTPS
                 local clean_url="${repo_url#https://}"
@@ -1339,16 +1341,16 @@ install_modules() {
             git clone "$final_url" "$target_dir" || log_error "Failed to clone $name"
         fi
     done
-    
+
     log_success "Modules installed"
 }
 
 patch_modules() {
     log_step "Patching Modules for Compatibility"
-    
+
     # Patches have been moved to the modules themselves.
     # This function is kept as a placeholder for future compatibility fixes if needed.
-    
+
     log_success "Modules patched (Skipped - fixes applied to source)"
 }
 
@@ -1361,10 +1363,10 @@ patch_database_seeder() {
 
 build_and_launch_containers() {
     log_step "Building & Launching Docker Containers"
-    
+
     log_info "Stopping any existing containers..."
     sudo docker compose down --remove-orphans 2>/dev/null || true
-    
+
     # Check and free ports 80 and 443
     for port in 80 443; do
         if sudo ss -lptn "sport = :$port" | grep -q ":$port"; then
@@ -1380,33 +1382,33 @@ build_and_launch_containers() {
             fi
         fi
     done
-    
+
     log_info "Building application image (with BuildKit)..."
     sudo docker compose build app
-    
+
     log_info "Starting all services..."
     sudo docker compose up -d
-    
+
     log_success "Containers launched"
 }
 
 wait_for_database() {
     log_step "Waiting for Database"
-    
+
     local max_attempts=30
     local attempt=0
-    
+
     while [ $attempt -lt $max_attempts ]; do
         if sudo docker compose exec -T db mysqladmin ping -h localhost -u root -p"${DB_ROOT_PASS}" >/dev/null 2>&1; then
             log_success "Database is ready"
             return 0
         fi
-        
+
         ((attempt++))
         echo -ne "\r${CYAN}⏳${NC} Attempt $attempt/$max_attempts..."
         sleep 2
     done
-    
+
     log_error "Database failed to become ready"
     log_error "Check docker logs: sudo docker compose logs db"
     exit 1
@@ -1414,7 +1416,7 @@ wait_for_database() {
 
 install_dependencies() {
     log_step "Installing Dependencies"
-    
+
     if [ "${SEED_SAMPLE_DATA:-false}" = true ]; then
         log_info "Installing Composer dependencies (including dev for seeding)..."
         if [ ${#MODULES_TO_INSTALL[@]} -gt 0 ]; then
@@ -1430,22 +1432,22 @@ install_dependencies() {
              sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer install --no-dev --optimize-autoloader
         fi
     fi
-     
+
     log_info "Installing NPM dependencies..."
     sudo docker compose exec -T app npm install
-    
+
     log_info "Building frontend assets..."
     sudo docker compose exec -T app npm run build
-    
+
     log_success "Dependencies installed"
 }
 
 finalize_installation() {
     log_step "Finalizing Installation"
-    
+
     log_info "Generating application key..."
     sudo docker compose exec -T app php artisan key:generate
-    
+
     if [ "$REUSE_DB" = true ]; then
         log_info "Running migrations on existing database..."
         sudo docker compose exec -T app php artisan migrate --force
@@ -1458,11 +1460,11 @@ finalize_installation() {
             --first_name="Admin" \
             --last_name="User"
     fi
-    
+
     if [ ${#MODULES_TO_INSTALL[@]} -gt 0 ]; then
         log_info "Running module migrations..."
         sudo docker compose exec -T app php artisan module:migrate --all --force
-        
+
         log_info "Seeding modules..."
         echo '
 $modules = Module::all();
@@ -1475,26 +1477,26 @@ foreach($modules as $module) {
     else
         log_info "No modules to migrate."
     fi
-    
+
     log_info "Seeding themes..."
     sudo docker compose exec -T app php artisan db:seed --class=ThemeSeeder --force
-    
+
     if [ "${SEED_SAMPLE_DATA:-false}" = true ]; then
         log_info "Seeding sample data..."
         sudo docker compose exec -T app php artisan db:seed --class=DatabaseSeeder --force
-        
+
         log_info "Cleaning up dev dependencies..."
         sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer install --no-dev --optimize-autoloader
     fi
-    
+
     # Seed default users for all roles
     log_info "Seeding default users (Admin, Agent, Finance, Reporter)..."
     sudo docker compose exec -T app php artisan db:seed --class=UserSeeder --force
-    
+
     # Configure git safe directory
     cd "$DEFAULT_INSTALL_DIR"
     sudo git config --global --add safe.directory "$DEFAULT_INSTALL_DIR/src"
-    
+
     log_success "Installation finalized"
 }
 
@@ -1512,13 +1514,13 @@ show_completion_message() {
     echo -e "${CYAN}Default User Accounts:${NC}"
     echo -e "  ${YELLOW}Admin${NC} - Full System Access"
     echo -e "    Email: ${GREEN}$ADMIN_EMAIL${NC}"
-    
+
     if [ "$REUSE_DB" = true ] && [ "$ADMIN_PASS_PRESERVED" = true ]; then
         echo -e "    Pass:  ${YELLOW}(Existing password unchanged)${NC}"
     else
         echo -e "    Pass:  ${GREEN}$ADMIN_PASS${NC}"
     fi
-    
+
     echo ""
     echo -e "  ${YELLOW}Agent${NC} - Standard Support Access"
     echo -e "    Email: ${GREEN}${AGENT_EMAIL:-agent@example.com}${NC}"
@@ -1531,7 +1533,7 @@ show_completion_message() {
     echo -e "  ${YELLOW}Reporter${NC} - Read-Only Access"
     echo -e "    Email: ${GREEN}${REPORTER_EMAIL:-reporter@example.com}${NC}"
     echo -e "    Pass:  ${GREEN}${REPORTER_PASS:-reporter123456789}${NC}"
-    
+
     echo ""
     echo -e "${CYAN}Cloudflare Tunnel (SSH + Web):${NC}"
     echo -e "  The tunnel runs as a separate stack — independent of this app."
@@ -1567,7 +1569,7 @@ main() {
 
     preflight_checks
     load_or_create_config
-    
+
     # Set defaults for credentials
     DB_ROOT_PASS="${DB_ROOT_PASS:-$(openssl rand -hex 16)}"
     DB_USER="${DB_USER:-freescout}"
@@ -1575,19 +1577,19 @@ main() {
     DB_NAME="${DB_NAME:-freescout}"
     ADMIN_EMAIL="${ADMIN_EMAIL:-admin@freescout.local}"
     ADMIN_PASS="${ADMIN_PASS:-$(openssl rand -hex 12)}"
-    
+
     check_existing_installation
-    
+
     if [ "$INTERACTIVE" = true ]; then
         if [ -z "${1:-}" ]; then
             interactive_setup
         fi
     fi
-    
+
     # Validate required variables
     validate_required_var "DOMAIN_NAME" "${DOMAIN_NAME:-}"
     validate_required_var "DOCKER_SUBNET" "${DOCKER_SUBNET:-}"
-    
+
     # Execute deployment
     decommission_existing
     setup_directories
@@ -1608,11 +1610,11 @@ main() {
     install_dependencies
     finalize_installation
     deploy_cloudflared
-    
+
     # Cleanup and success
     log_info "Pruning unused Docker resources..."
     sudo docker image prune -f >/dev/null 2>&1 || true
-    
+
     show_completion_message
 }
 
@@ -1620,17 +1622,17 @@ main() {
 deploy_cloudflared() {
     if [ -n "${CF_TUNNEL_TOKEN:-}" ]; then
         log_step "Checking Cloudflare Tunnel"
-        
+
         local existing_tunnels
         existing_tunnels=$(sudo docker ps --format "{{.ID}}|{{.Names}}|{{.Image}}" | grep -i "cloudflared" || true)
-        
+
         local do_deploy_cf=true
         if [ -n "$existing_tunnels" ]; then
             log_warning "Existing cloudflared containers detected:"
             echo "$existing_tunnels" | while IFS='|' read -r id name image; do
                 echo "  - $name ($id)"
             done
-            
+
             if [ -t 0 ] || [ -c /dev/tty ]; then
                 echo ""
                 safe_read "Do you want to stop existing tunnel containers and redeploy the standalone utility? [y/N]: " redeploy_cf
@@ -1648,7 +1650,7 @@ deploy_cloudflared() {
                 do_deploy_cf=false
             fi
         fi
-        
+
         if [ "$do_deploy_cf" = true ]; then
             log_info "Deploying standalone Cloudflare Tunnel..."
             local cf_dir="$DEFAULT_INSTALL_DIR/src/deployment/cloudflared"

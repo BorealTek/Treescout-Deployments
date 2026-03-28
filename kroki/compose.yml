@@ -1,0 +1,23 @@
+# Standalone Kroki Stack
+#
+# Run this separately from the app stack so diagram rendering has an
+# independent lifecycle (similar to deployment/cloudflared).
+#
+# Usage:
+#   cd deployment/kroki
+#   docker compose up -d
+#   docker compose logs -f
+#
+# Then set in app env (inside app container context):
+#   MIDDLEMAN_KROKI_ENABLED=true
+#   MIDDLEMAN_KROKI_URL=http://host.docker.internal:8001
+
+services:
+  kroki:
+    image: yuzutech/kroki:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      # Keep this instance internal/local by default
+      - KROKI_SAFE_MODE=true

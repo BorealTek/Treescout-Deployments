@@ -322,7 +322,6 @@ main() {
     validate_required "DB_USER" "Database User"
     validate_required "DB_NAME" "Database Name"
     validate_email "AGENT_EMAIL" "Agent Email"
-    validate_token "REPO_TOKEN" "GitHub PAT Token (required for modules)"
     echo ""
 
     # GCP-specific fields
@@ -349,6 +348,7 @@ main() {
 
     # Module check
     echo -e "${YELLOW}6. Checking module configuration...${NC}"
+    local module_count=0
     if grep -q "MODULES_TO_INSTALL=(" "$CONFIG_FILE"; then
         local module_count
         module_count=$(awk '
@@ -360,6 +360,20 @@ main() {
         log_note "Modules configured in MODULES_TO_INSTALL array: $module_count"
         if grep -q "REPO_TOKEN|main" "$CONFIG_FILE"; then
             log_success "Module repos show placeholder REPO_TOKEN (will be substituted)"
+        fi
+
+        if [ "$module_count" -gt 0 ]; then
+            if validate_key "REPO_TOKEN"; then
+                local repo_token
+                repo_token=$(get_value "REPO_TOKEN")
+                if [[ "$repo_token" =~ ^(REPO_TOKEN|ghp_your_token_here)$ ]] || [ -z "$repo_token" ]; then
+                    log_error "REPO_TOKEN is required when MODULES_TO_INSTALL has entries"
+                else
+                    log_success "REPO_TOKEN is set for module repository access"
+                fi
+            else
+                log_error "REPO_TOKEN is required when MODULES_TO_INSTALL has entries"
+            fi
         fi
     else
         log_warning "MODULES_TO_INSTALL not found in config"

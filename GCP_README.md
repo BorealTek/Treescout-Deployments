@@ -157,7 +157,7 @@ sudo bash deployment/gcp_deploy.sh
 6. **REPO_TOKEN** → GitHub PAT for module repos
 
 ### Recommended Before Deploy
-7. **MODULES_TO_INSTALL** — Select which modules to install
+7. **MODULES_TO_INSTALL** — Select which modules to install (default full internal set is 18 modules, including AppHealth, MiddleMan, DeploymentManager)
 8. **ALLOWED_SOURCE_RANGES** — IP ranges allowed to access app
 9. **AGENT_EMAIL**, **FINANCE_EMAIL**, **REPORTER_EMAIL** — Default test users
 

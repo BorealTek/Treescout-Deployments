@@ -23,7 +23,7 @@ Quick reference for deploying and troubleshooting FreeScout on Google Cloud Plat
 - [ ] `deploy.conf.gcp` copied to `deploy.conf`
 - [ ] All passwords changed from template defaults
 - [ ] GitHub PAT token created and set in REPO_TOKEN
-- [ ] Module selection finalized (edit MODULES_TO_INSTALL)
+- [ ] Module selection finalized (for BorealTek internal use the default full MODULES_TO_INSTALL; for clients trim as needed)
 
 ### Configuration Review (`deploy.conf`)
 - [ ] `DOMAIN_NAME` set to actual domain or GCP IP

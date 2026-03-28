@@ -3,7 +3,7 @@
 
 #===============================================================================
 # FreeScout OrbStack Deployer (macOS + Cloudflare Tunnel)
-# 
+#
 # Enterprise-grade deployment script with:
 # - Bash strict mode (set -euo pipefail)
 # - Trap handlers for cleanup
@@ -63,6 +63,7 @@ CLEANUP_NEEDED=false
 MODULES_TO_INSTALL=(
     "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
     "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
+    "AppHealth|https://github.com/BorealTek/AppHealth-Module.git|REPO_TOKEN|main"
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
     "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
@@ -72,10 +73,11 @@ MODULES_TO_INSTALL=(
     "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "MiddleMan|https://github.com/BorealTek/Treescout-MiddleMan.git|REPO_TOKEN|main"
     "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
     "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
-    "TreeScoutDeploymentManager|https://github.com/BorealTek/TreeScoutDeploymentManager-Module.git|REPO_TOKEN|main"
+    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
 
@@ -120,15 +122,15 @@ spinner() {
 
 cleanup() {
     local exit_code=$?
-    
+
     if [ "$CLEANUP_NEEDED" = true ]; then
         log_warning "Cleaning up after error..."
     fi
-    
+
     if [ $exit_code -ne 0 ]; then
         log_error "Script failed with exit code $exit_code"
     fi
-    
+
     exit $exit_code
 }
 
@@ -157,7 +159,7 @@ safe_read() {
 validate_required_var() {
     local var_name=$1
     local var_value=${2:-}
-    
+
     if [ -z "$var_value" ]; then
         log_error "Required variable '$var_name' is not set"
         exit 1
@@ -181,12 +183,12 @@ sed_in_place() {
 
 preflight_checks() {
     log_step "Running Pre-Flight Checks"
-    
+
     # Check for Homebrew (informational)
     if ! command_exists brew; then
         log_warning "Homebrew not found. Assuming dependencies are met."
     fi
-    
+
     # Check required tools
     local required_tools=("git" "curl" "openssl")
     for tool in "${required_tools[@]}"; do
@@ -198,14 +200,14 @@ preflight_checks() {
             exit 1
         fi
     done
-    
+
     # Check Docker (OrbStack or Docker Desktop)
     if ! command_exists docker; then
         log_error "Docker not found! Install OrbStack first."
         log_info "Download from: https://orbstack.dev"
         exit 1
     fi
-    
+
     # Verify Docker is running
     log_info "Verifying Docker Status..."
     if ! docker info >/dev/null 2>&1; then
@@ -226,11 +228,11 @@ preflight_checks() {
             log_success "System memory check passed"
         fi
     fi
-    
+
     # Enable BuildKit
     export DOCKER_BUILDKIT=1
     export COMPOSE_DOCKER_CLI_BUILD=1
-    
+
     log_success "Pre-flight checks passed"
 }
 
@@ -260,11 +262,11 @@ show_banner() {
 load_or_create_config() {
     if [ -f "$CONFIG_FILE" ]; then
         log_success "Configuration file found: $CONFIG_FILE"
-        
+
         if [ -t 0 ] || [ -c /dev/tty ]; then
             safe_read "Use this configuration? [Y/n] " use_config
             use_config=${use_config:-Y}
-            
+
             if [[ "$use_config" =~ ^[Yy]$ ]]; then
                 log_info "Loading configuration..."
                 # shellcheck disable=SC1090
@@ -275,7 +277,7 @@ load_or_create_config() {
                 if [ -n "${GIT_BRANCH:-}" ]; then DEFAULT_BRANCH="$GIT_BRANCH"; fi
 
                 INTERACTIVE=false
-                
+
                 # Ensure array exists if not defined in config
                 if [ -z "${MODULES_TO_INSTALL+x}" ]; then
                     MODULES_TO_INSTALL=()
@@ -285,10 +287,10 @@ load_or_create_config() {
         fi
     else
         log_info "No configuration file found"
-        
+
         if [ -t 0 ] || [ -c /dev/tty ]; then
             safe_read "Create configuration template? [y/N] " create_config
-            
+
             if [[ "$create_config" =~ ^[Yy]$ ]]; then
                 create_config_template
                 log_success "Configuration template created at $CONFIG_FILE"
@@ -337,7 +339,9 @@ export REPO_TOKEN="ghp_your_token_here"
 MODULES_TO_INSTALL=(
     "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
     "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
+    "AppHealth|https://github.com/BorealTek/AppHealth-Module.git|REPO_TOKEN|main"
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+    "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
     "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
@@ -345,9 +349,11 @@ MODULES_TO_INSTALL=(
     "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "MiddleMan|https://github.com/BorealTek/Treescout-MiddleMan.git|REPO_TOKEN|main"
     "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
     "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
+    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
 EOF
@@ -365,7 +371,7 @@ interactive_menu() {
         echo -e "  ${COLOR_PRIMARY}[0]${NC} Exit"
         echo ""
         safe_read "  Enter Selection: " choice
-        
+
         case $choice in
             1) return 0 ;;
             2) return 0 ;;
@@ -382,13 +388,13 @@ interactive_menu() {
 
 interactive_setup() {
     log_step "Interactive Setup"
-    
+
     # Cloudflare configuration
     log_info "Cloudflare Configuration"
     safe_read "Domain Name [devtickets.scotchmcdonald.dev]: " input_domain
     DOMAIN_NAME="${input_domain:-devtickets.scotchmcdonald.dev}"
-    
-    
+
+
     # Admin configuration
     log_info "Admin User"
     safe_read "Admin Email [admin@scotchmcdonald.dev]: " input_email
@@ -396,7 +402,7 @@ interactive_setup() {
     safe_read "Admin Password [auto-generate]: " input_pass
     ADMIN_PASS="${input_pass:-$(openssl rand -hex 12)}"
     echo ""
-    
+
     # Google OAuth (optional)
     log_info "Google OAuth (Optional)"
     safe_read "Google Client ID (Enter to skip): " GOOGLE_CLIENT_ID
@@ -406,7 +412,7 @@ interactive_setup() {
         safe_read "Allowed Domains (comma separated): " GOOGLE_ALLOWED_DOMAINS
     fi
     echo ""
-    
+
     # Configuration summary
     echo "────────────────────────────────────────────────────────────"
     echo -e "CONFIGURATION SUMMARY:"
@@ -430,7 +436,7 @@ interactive_setup() {
 
 load_existing_credentials() {
     local env_file=$1
-    
+
     # Load Docker .env credentials
     if [ -f "$env_file" ]; then
         DB_PASS=$(grep "^DB_PASSWORD=" "$env_file" | cut -d '=' -f2 || echo "")
@@ -438,7 +444,7 @@ load_existing_credentials() {
         DB_USER=$(grep "^DB_USER=" "$env_file" | cut -d '=' -f2 || echo "")
         DB_NAME=$(grep "^DB_DATABASE=" "$env_file" | cut -d '=' -f2 || echo "")
     fi
-    
+
     # Load Laravel .env credentials
     local laravel_env="$DEFAULT_INSTALL_DIR/src/.env"
     if [ -f "$laravel_env" ]; then
@@ -447,7 +453,7 @@ load_existing_credentials() {
         existing_pass=$(grep "^ADMIN_PASSWORD=" "$laravel_env" | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
         # Preserve APP_KEY so sessions survive redeployment
         existing_key=$(grep "^APP_KEY=" "$laravel_env" | head -1 | cut -d '=' -f2- | tr -d '"' | tr -d "'" || echo "")
-        
+
         if [ -n "$existing_email" ]; then ADMIN_EMAIL=$existing_email; fi
         if [ -n "$existing_pass" ]; then ADMIN_PASS=$existing_pass; fi
         if [ -n "$existing_key" ]; then EXISTING_APP_KEY=$existing_key; fi
@@ -456,16 +462,16 @@ load_existing_credentials() {
 
 check_existing_installation() {
     local existing_env="$DEFAULT_INSTALL_DIR/.env"
-    
+
     if [ -f "$existing_env" ]; then
         log_warning "Existing installation found at $DEFAULT_INSTALL_DIR"
-        
+
         if [ -t 0 ] || [ -c /dev/tty ]; then
             echo ""
             echo "1) Reuse existing database (Keep data)"
             echo "2) Overwrite database (DESTROY ALL DATA)"
             safe_read "Select [1-2]: " reuse_opt
-            
+
             case "$reuse_opt" in
                 2)
                     REUSE_DB=false
@@ -481,7 +487,7 @@ check_existing_installation() {
             REUSE_DB=true
             EXISTING_DECISION_MADE=true
         fi
-        
+
         if [ "$REUSE_DB" = true ]; then
             log_info "Loading existing credentials..."
             load_existing_credentials "$existing_env"
@@ -504,11 +510,11 @@ decommission_existing() {
 
     if [ -f "$DEFAULT_INSTALL_DIR/docker-compose.yml" ]; then
         log_step "Decommissioning Existing Installation"
-        
+
         cd "$DEFAULT_INSTALL_DIR"
-        
+
         log_warning "Existing deployment detected!"
-        
+
         if [ "${EXISTING_DECISION_MADE:-false}" = true ]; then
             log_info "Using previous selection (Reuse Database: $REUSE_DB)"
         else
@@ -519,7 +525,7 @@ decommission_existing() {
             echo "  3) Cancel deployment"
             echo ""
             safe_read "Enter choice [1-3]: " choice
-            
+
             case $choice in
                 1) REUSE_DB=true ;;
                 2) REUSE_DB=false ;;
@@ -527,13 +533,13 @@ decommission_existing() {
                 *) REUSE_DB=true ;;
             esac
         fi
-        
+
         if [ "$REUSE_DB" = true ]; then
              log_info "Reusing existing data - stopping containers only..."
              docker compose down 2>/dev/null || true
         else
              log_warning "Nuking everything - all data will be lost!"
-             # If decision was made previously and it was Nuke, we should doubly confirm? 
+             # If decision was made previously and it was Nuke, we should doubly confirm?
              # No, assume they meant it. Or auto-confirm.
              if [ "${EXISTING_DECISION_MADE:-false}" = false ]; then
                 safe_read "Type 'yes' to confirm: " confirm
@@ -542,10 +548,10 @@ decommission_existing() {
                     exit 1
                 fi
              fi
-             
+
              log_info "Removing containers and volumes..."
              docker compose down -v --remove-orphans 2>/dev/null || true
-             
+
              log_info "Removing source code directory..."
              rm -rf src
              log_success "Everything nuked"
@@ -555,16 +561,16 @@ decommission_existing() {
 
 setup_directories() {
     log_step "Setting Up Directory Structure"
-    
+
     mkdir -p "$DEFAULT_INSTALL_DIR/nginx"
     cd "$DEFAULT_INSTALL_DIR"
-    
+
     log_success "Directories created"
 }
 
 generate_dockerfile() {
     log_step "Generating Dockerfile"
-    
+
     cat > Dockerfile <<'EOF'
 FROM serversideup/php:8.3-fpm-nginx
 
@@ -614,13 +620,13 @@ fi\n" > /etc/entrypoint.d/99-fix-docker-sock.sh && \
 # Note: We run as root to allow the entrypoint script to fix permissions.
 # The base image handles dropping privileges to www-data for PHP-FPM.
 EOF
-    
+
     log_success "Dockerfile generated"
 }
 
 generate_nginx_config() {
     log_step "Generating Nginx Configuration (HTTP for tunnel + HTTPS for local access)"
-    
+
     cat > nginx/default.conf <<'EOF'
 # Plain HTTP on port 8080 — used by the Cloudflare tunnel.
 # The tunnel itself handles TLS between the browser and Cloudflare's edge;
@@ -770,33 +776,33 @@ server {
     }
 }
 EOF
-    
+
     log_success "Nginx config generated"
 }
 
 generate_ssl_certificates() {
     log_step "Generating Self-Signed SSL Certificates"
-    
+
     mkdir -p nginx/ssl
-    
+
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout nginx/ssl/key.pem \
         -out nginx/ssl/cert.pem \
         -subj "/C=US/ST=State/L=City/O=FreeScout/CN=${DOMAIN_NAME}" \
         2>&1 | grep -v "writing new private key" || true
-    
+
     # Verify certificates
     if [ ! -f "nginx/ssl/cert.pem" ] || [ ! -f "nginx/ssl/key.pem" ]; then
         log_error "Failed to generate SSL certificates"
         exit 1
     fi
-    
+
     log_success "SSL certificates generated"
 }
 
 generate_docker_env() {
     log_step "Generating Docker Environment File"
-    
+
     cat > .env <<EOF
 DB_ROOT_PASSWORD=${DB_ROOT_PASS}
 DB_DATABASE=${DB_NAME}
@@ -810,13 +816,13 @@ EOF
     # Pass through any environment variables ending in _TOKEN, _KEY, or _SECRET
     # This allows passing git access tokens for modules
     env | grep -E '(_TOKEN|_KEY|_SECRET)=' | grep -vE '^(DB_|APP_|REDIS_|GOOGLE_|REVERB_|TUNNEL_)' >> .env || true
-    
+
     log_success "Docker .env generated"
 }
 
 generate_docker_compose() {
     log_step "Generating Docker Compose Configuration"
-    
+
     # Detect Docker socket GID for permission handling
     # OrbStack typically uses same socket path as Docker Desktop
     local DOCKER_GID="999"
@@ -827,7 +833,7 @@ generate_docker_compose() {
     else
         log_warning "Docker socket not found, using default GID: $DOCKER_GID"
     fi
-    
+
     cat > docker-compose.yml <<EOF
 services:
   app:
@@ -1031,13 +1037,13 @@ volumes:
   # bootstrap_cache: persists compiled config/routes/views between container restarts
   bootstrap_cache:
 EOF
-    
+
     log_success "Docker Compose config generated"
 }
 
 generate_update_script() {
     log_step "Generating Update Script"
-    
+
     cat > update.sh <<EOF
 #!/usr/bin/env bash
 #===============================================================================
@@ -1146,14 +1152,14 @@ docker image prune -f >/dev/null 2>&1 || true
 APP_URL=\$(grep "^APP_URL=" src/.env | cut -d'=' -f2)
 log_ok "Update complete! App is live at \${APP_URL}"
 EOF
-    
+
     chmod +x update.sh
     log_success "Update script generated"
 }
 
 clone_or_update_repo() {
     log_step "Cloning/Updating Repository"
-    
+
     if [ -d "src" ]; then
         # Guard: src/ exists but is NOT a git repo (leftover from a failed deploy).
         # Re-clone rather than crashing on the update path.
@@ -1164,26 +1170,26 @@ clone_or_update_repo() {
             git clone -b "$DEFAULT_BRANCH" "$DEFAULT_REPO" src
         else
             log_info "Source folder exists. Syncing..."
-            
+
             cd src
             git config --global --add safe.directory "$PWD"
             git remote set-url origin "$DEFAULT_REPO"
             git fetch origin
-            
+
             if ! git checkout "$DEFAULT_BRANCH" 2>/dev/null; then
                 git checkout -b "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
             fi
-            
+
             if ! git pull origin "$DEFAULT_BRANCH"; then
                 log_error "Git pull failed! Local changes detected."
-                
+
                 if [ -t 0 ]; then
                     echo ""
                     echo "1) Discard local changes (git reset --hard)"
                     echo "2) Nuke & Re-clone (Delete src and download fresh)"
                     echo "3) Exit and fix manually"
                     read -rp "Select [1-3]: " git_opt
-                    
+
                     case "$git_opt" in
                         1)
                             log_info "Resetting to origin/$DEFAULT_BRANCH..."
@@ -1206,7 +1212,7 @@ clone_or_update_repo() {
                     exit 1
                 fi
             fi
-            
+
             cd ..
         fi
     else
@@ -1231,11 +1237,11 @@ clone_or_update_repo() {
 
 configure_laravel() {
     log_step "Configuring Laravel Environment"
-    
+
     cp "src/.env.example" "src/.env"
-    
+
     local env_file="src/.env"
-    
+
     # NOTE: .env.example has DB settings commented out — match the commented forms
     # APP_NAME is already set correctly in .env.example
     sed_in_place "s/DB_CONNECTION=sqlite/DB_CONNECTION=mysql/g" "$env_file"
@@ -1251,7 +1257,7 @@ configure_laravel() {
     # Must run as production — debug mode adds significant per-request overhead
     sed_in_place "s/^APP_ENV=.*/APP_ENV=production/g" "$env_file"
     sed_in_place "s/^APP_DEBUG=.*/APP_DEBUG=false/g" "$env_file"
-    
+
     # Admin credentials
     cat >> "$env_file" <<EOF
 
@@ -1259,7 +1265,7 @@ configure_laravel() {
 ADMIN_EMAIL=${ADMIN_EMAIL}
 ADMIN_PASSWORD="${ADMIN_PASS}"
 EOF
-    
+
     # Reverb/Broadcasting — strip ALL existing BROADCAST/REVERB lines then append
     # a single authoritative block. This is idempotent and immune to sed pattern
     # mismatches against stale .env.example placeholder values.
@@ -1292,7 +1298,7 @@ VITE_REVERB_HOST="${DOMAIN_NAME}"
 VITE_REVERB_PORT=443
 VITE_REVERB_SCHEME=https
 EOF
-    
+
     # Google OAuth (if configured)
     if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
         cat >> "$env_file" <<EOF
@@ -1305,12 +1311,12 @@ GOOGLE_ADMIN_EMAILS="${GOOGLE_ADMIN_EMAILS:-}"
 GOOGLE_ALLOWED_DOMAINS="${GOOGLE_ALLOWED_DOMAINS:-}"
 EOF
     fi
-    
+
     # Trust Cloudflare proxies
     sed_in_place "s|^TRUSTED_PROXIES=.*|TRUSTED_PROXIES=*|g" "$env_file"
     # Append only if the key doesn't already exist in .env.example
     grep -q "^TRUSTED_PROXIES=" "$env_file" || echo "TRUSTED_PROXIES=*" >> "$env_file"
-    
+
     log_success "Laravel environment configured"
 }
 
@@ -1357,11 +1363,11 @@ install_modules() {
         fi
 
         log_info "Installing module: $name"
-        
+
         local final_url="$repo_url"
         if [ -n "$token_var" ]; then
             local token_val="${!token_var:-}"
-            
+
             if [ -n "$token_val" ]; then
                 # Inject token into URL for HTTPS
                 local clean_url="${repo_url#https://}"
@@ -1373,7 +1379,7 @@ install_modules() {
 
         GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone "$final_url" "$target_dir" || log_error "Failed to clone $name"
     done
-    
+
     log_success "Modules installed"
 }
 
@@ -1410,10 +1416,10 @@ sync_modules_statuses() {
 
 patch_modules() {
     log_step "Patching Modules for Compatibility"
-    
+
     # Patches have been moved to the modules themselves.
     # This function is kept as a placeholder for future compatibility fixes if needed.
-    
+
     log_success "Modules patched (Skipped - fixes applied to source)"
 }
 
@@ -1426,30 +1432,30 @@ patch_database_seeder() {
 
 setup_storage_permissions() {
     log_step "Setting Up Storage & Permissions"
-    
+
     # Clear potential cache files
     rm -f src/bootstrap/cache/*.php 2>/dev/null || true
     rm -rf src/storage/framework/cache/* 2>/dev/null || true
     rm -rf src/storage/framework/views/* 2>/dev/null || true
     rm -rf src/storage/framework/sessions/* 2>/dev/null || true
-    
+
     # Create directories
     mkdir -p src/storage/framework/{cache,sessions,views,testing}
     mkdir -p src/storage/logs
     mkdir -p src/bootstrap/cache
-    
+
     # 775: owner/group (www-data) can write; others can read. Safer than 777.
     chmod -R 775 src/storage src/bootstrap/cache
-    
+
     log_success "Storage directories ready"
 }
 
 build_and_launch_containers() {
     log_step "Building & Launching Docker Containers"
-    
+
     log_info "Building application image (with BuildKit)..."
     docker compose build app
-    
+
     # Start only core services — queue workers and cron are deferred until AFTER
     # migrations run.  Starting them now would cause a fatal error because the
     # `jobs` table (and other Laravel tables) do not yet exist in the database.
@@ -1458,27 +1464,27 @@ build_and_launch_containers() {
     # same project name exist (e.g. from a failed deploy that wasn't cleaned up).
     # --remove-orphans: removes leftover containers from prior compose configs.
     docker compose up -d --force-recreate --remove-orphans db redis app reverb
-    
+
     log_success "Core containers launched (queue workers will start after migrations)"
 }
 
 wait_for_database() {
     log_step "Waiting for Database"
-    
+
     local max_attempts=30
     local attempt=0
-    
+
     while [ $attempt -lt $max_attempts ]; do
         if docker compose exec -T db mariadb -u root -p"${DB_ROOT_PASS}" -e "SELECT 1;" >/dev/null 2>&1; then
             log_success "Database is ready"
             return 0
         fi
-        
+
         ((attempt++))
         echo -ne "\r${CYAN}⏳${NC} Attempt $attempt/$max_attempts..."
         sleep 2
     done
-    
+
     log_error "Database failed to become ready"
     return 1
 }
@@ -1552,18 +1558,18 @@ install_dependencies() {
         chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache && \
         chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
     '
-    
+
     log_info "Installing Composer dependencies..."
     docker compose exec -T -u root app composer install --no-dev --optimize-autoloader
     docker compose exec -T -u root app chown -R www-data:www-data /var/www/html/vendor /var/www/html/composer.lock
-    
+
     log_info "Installing NPM dependencies..."
     docker compose exec -T -u root app npm install
-    
+
     log_info "Building frontend assets..."
     docker compose exec -T -u root app npm run build
     docker compose exec -T -u root app chown -R www-data:www-data /var/www/html/public/build 2>/dev/null || true
-    
+
     log_success "Dependencies installed"
 }
 
@@ -1674,14 +1680,14 @@ show_completion_message() {
     echo -e "  ${CYAN}ℹ  The Cloudflare tunnel encrypts the public-facing connection."
     echo -e "     No SSL is needed between cloudflared and this origin.${NC}"
     echo ""
-    
+
     if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
         echo -e "${CYAN}Google OAuth Setup:${NC}"
         echo -e "  Add this redirect URI to Google Cloud Console:"
         echo -e "  ${GREEN}https://$DOMAIN_NAME/auth/google/callback${NC}"
         echo ""
     fi
-    
+
     echo -e "${CYAN}Next Steps:${NC}"
     echo -e "  • Update:    ${YELLOW}cd $DEFAULT_INSTALL_DIR && ./update.sh${NC}"
     echo -e "  • View logs: ${YELLOW}docker compose logs -f${NC}"
@@ -1697,7 +1703,7 @@ show_completion_message() {
 main() {
     show_banner
     if [ "$INTERACTIVE" = true ]; then
-        # Check if pre-flight checks should be visible before menu? 
+        # Check if pre-flight checks should be visible before menu?
         # User requested splashscreen FIRST.
         interactive_menu
         # After menu, run checks
@@ -1707,7 +1713,7 @@ main() {
     fi
 
     load_or_create_config
-    
+
     # Set defaults
     DB_ROOT_PASS="${DB_ROOT_PASS:-$(openssl rand -hex 16)}"
     DB_USER="${DB_USER:-freescout}"
@@ -1715,18 +1721,18 @@ main() {
     DB_NAME="${DB_NAME:-freescout}"
     ADMIN_EMAIL="${ADMIN_EMAIL:-admin@scotchmcdonald.dev}"
     ADMIN_PASS="${ADMIN_PASS:-$(openssl rand -hex 12)}"
-    
+
     check_existing_installation
 
     if [ "$INTERACTIVE" = true ]; then
         interactive_setup
     fi
-    
+
     log_info "Validating configuration..."
 
     # Validate required variables
     validate_required_var "DOMAIN_NAME" "${DOMAIN_NAME:-}"
-    
+
     # Execute deployment
     decommission_existing
     setup_directories
@@ -1756,28 +1762,28 @@ main() {
     log_success "Queue workers and cron scheduler started"
 
     deploy_cloudflared
-    
+
     # Cleanup
     log_info "Pruning unused Docker resources..."
     docker image prune -f >/dev/null 2>&1 || true
-    
+
     show_completion_message
 }
 
 deploy_cloudflared() {
     if [ -n "${CF_TUNNEL_TOKEN:-}" ]; then
         log_step "Checking Cloudflare Tunnel"
-        
+
         local existing_tunnels
         existing_tunnels=$(docker ps --format "{{.ID}}|{{.Names}}|{{.Image}}" | grep -i "cloudflared" || true)
-        
+
         local do_deploy_cf=true
         if [ -n "$existing_tunnels" ]; then
             log_warning "Existing cloudflared containers detected:"
             echo "$existing_tunnels" | while IFS='|' read -r id name image; do
                 echo "  - $name ($id)"
             done
-            
+
             if [ -t 0 ] || [ -c /dev/tty ]; then
                 echo ""
                 safe_read "Do you want to stop existing tunnel containers and redeploy the standalone utility? [y/N]: " redeploy_cf
@@ -1795,7 +1801,7 @@ deploy_cloudflared() {
                 do_deploy_cf=false
             fi
         fi
-        
+
         if [ "$do_deploy_cf" = true ]; then
             log_info "Deploying standalone Cloudflare Tunnel..."
             local cf_dir="$DEFAULT_INSTALL_DIR/src/deployment/cloudflared"

@@ -214,9 +214,21 @@ load_config() {
         exit 1
     fi
 
-    if [ -z "${REPO_TOKEN:-}" ]; then
-        log_warning "REPO_TOKEN is empty — module installation will fail"
-        log_info "Set REPO_TOKEN in deploy.conf to a GitHub Personal Access Token"
+    local module_count=0
+    if [ -n "${MODULES_TO_INSTALL+x}" ]; then
+        module_count=${#MODULES_TO_INSTALL[@]}
+    fi
+
+    if [ "$module_count" -gt 0 ] && [ -z "${REPO_TOKEN:-}" ]; then
+        log_error "REPO_TOKEN is empty but MODULES_TO_INSTALL contains ${module_count} entries"
+        log_info "Set REPO_TOKEN in deploy.conf to a GitHub Personal Access Token with repo scope"
+        exit 1
+    fi
+
+    if [ "$module_count" -eq 0 ]; then
+        log_warning "MODULES_TO_INSTALL is empty — deployment will run with core app only"
+    else
+        log_success "Module configuration loaded: ${module_count} module(s)"
     fi
 
     log_success "Configuration loaded"

@@ -105,8 +105,12 @@ LETSENCRYPT_EMAIL="admin@yourdomain.com"
 
 #### Modules
 ```bash
-# Edit MODULES_TO_INSTALL array to include only what you need
-# Full list available in deployment/deploy.conf.gcp
+# Module selection source of truth:
+#   deployment/modules.manifest.json
+#
+# For BorealTek internal full deployment, keep the full MODULES_TO_INSTALL
+# array from deploy.conf.gcp (includes AppHealth, MiddleMan, DeploymentManager).
+# For client deployments, trim MODULES_TO_INSTALL to the required profile.
 
 # Example: Core MSP deployment (CRM + Billing + Portal)
 MODULES_TO_INSTALL=(

@@ -58,6 +58,8 @@ export REPO_TOKEN="ghp_xxxxxxxxxxxx"       # GitHub PAT token
 bash deployment/gcp-config-validate.sh
 ```
 
+For BorealTek internal deployments, keep the default full `MODULES_TO_INSTALL` array from `deploy.conf.gcp` (18 modules, including AppHealth, MiddleMan, DeploymentManager).
+
 ### Step 3: Deploy
 
 ```bash
@@ -132,10 +134,16 @@ USE_MANAGED_SSL="false"                 # Use self-signed (default)
 
 ### Modules (Choose What to Install)
 ```bash
+# Full internal deployment: keep the default full array from deploy.conf.gcp
+# (includes AppHealth, MiddleMan, DeploymentManager).
+# Source of truth: deployment/modules.manifest.json
+
+# Example trimmed client profile:
 MODULES_TO_INSTALL=(
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
     "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
-    # Add more as needed (see deploy.conf.gcp for full list)
+   "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+   "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
 )
 ```
 
