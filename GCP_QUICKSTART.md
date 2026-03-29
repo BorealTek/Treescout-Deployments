@@ -53,6 +53,11 @@ DB_PASS="DatabaseUserPass123!"             # Change from default!
 export REPO_TOKEN="ghp_xxxxxxxxxxxx"       # GitHub PAT token
 ```
 
+**Lock the file to other viewers**
+```bash
+chmod 600 deploy.conf
+```
+
 **Validate config before deploying:**
 ```bash
 bash deployment/gcp-config-validate.sh
@@ -92,14 +97,14 @@ https://1.2.3.4
 
 ## 📂 Files Created
 
-| File | Purpose | Size |
-|------|---------|------|
-| **gcp_deploy.sh** | Main deployment script (auto-detects GCP, creates firewall) | 18K |
-| **deploy.conf.gcp** | GCP configuration template (edit before deploy) | 12K |
-| **gcp-config-validate.sh** | Validates deploy.conf before deployment | 13K |
-| **GCP_DEPLOYMENT.md** | Complete guide with production upgrades | 15K |
-| **GCP_CHECKLIST.md** | Quick reference & troubleshooting | 12K |
-| **GCP_README.md** | Overview of all GCP files | 11K |
+| File | Purpose |
+|------|---------|
+| **gcp_deploy.sh** | Main deployment script (auto-detects GCP, creates firewall) |
+| **deploy.conf.gcp** | GCP configuration template (edit before deploy) |
+| **gcp-config-validate.sh** | Validates deploy.conf before deployment |
+| **GCP_DEPLOYMENT.md** | Complete guide with production upgrades |
+| **GCP_CHECKLIST.md** | Quick reference & troubleshooting |
+| **GCP_README.md** | Overview of all GCP files |
 
 ---
 
