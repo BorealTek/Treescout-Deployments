@@ -1,175 +1,123 @@
 #===============================================================================
 # FreeScout GCP Deployment Configuration
-# Copy this file to 'deploy.conf' and customize for your GCP environment.
 #
-# This configuration is optimized for Google Cloud Platform (GCP):
-# - Compute Engine instances (e2-standard-2 or larger)
-# - Cloud SQL for managed databases (optional)
-# - Cloud Load Balancer for HTTPS/SSL
-# - GCP Firewall rules for network access
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  FIRST-TIME SETUP                                                       │
+# │  1. Create all secrets in GCP Secret Manager:                           │
+# │       bash deployment/gcp-secrets-bootstrap.sh                         │
+# │  2. Fill in non-secret values below (DOMAIN_NAME, ALLOWED_SOURCE_RANGES)│
+# │  3. Validate:  bash deployment/gcp-config-validate.sh                  │
+# │  4. Deploy:    sudo bash deployment/gcp_deploy.sh                       │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# This file is committed to git as the template — it contains NO real secrets.
+# deploy.conf (created automatically from this file on first run) is gitignored.
 #===============================================================================
 
 #===============================================================================
-# INSTALLATION SETTINGS
+# SECRET MANAGER (master switch)
+# Sensitive credentials are pulled from GCP Secret Manager at deploy time.
+# Set to "false" only for local/non-GCP testing; supply plaintext fallbacks then.
 #===============================================================================
+USE_GCP_SECRET_MANAGER="true"
 
-# Git Repository to deploy from
+#===============================================================================
+# INSTALLATION
+#===============================================================================
 GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
 GIT_BRANCH="laravel-11-foundation"
-
-# Installation path on the GCP server (system directory, not home)
 DEFAULT_INSTALL_DIR="/opt/freescout-docker"
-
-# GCP Project ID (auto-detected if running gcp_deploy.sh, but can override)
-GCP_PROJECT_ID=""
-
-# GCP Compute Zone (auto-detected if running gcp_deploy.sh)
+GCP_PROJECT_ID=""       # Auto-detected from instance metadata when blank
 GCP_ZONE="us-central1-a"
 
 #===============================================================================
-# NETWORK SETTINGS
+# NETWORK
 #===============================================================================
+# Domain name or GCP external IP (e.g. 34.0.0.1.nip.io for testing)
+DOMAIN_NAME="freescout.example.com"       # ← REQUIRED: change before deploying
 
-# Domain name for the application
-# Options:
-#   1. GCP Cloud Load Balancer IP: <EXTERNAL_IP>.nip.io (temporary)
-#   2. Custom domain: tickets.yourcompany.com (requires DNS configuration)
-#   3. GCP Cloud Armor: Use with gcloud for DDoS protection
-DOMAIN_NAME="freescout.example.com"
-
-# PUBLIC ACCESS (required for GCP instances)
-# If running on Google Cloud, you typically want:
-#   - GCP Cloud Load Balancer (handles SSL, auto-scaling, DDoS protection)
-#   - Or: GCP Armor + Compute Engine public IP
-#   - Or: Google Cloud NAT for outbound-only (internal access only)
-#
-# For testing: expose ports directly via GCP Firewall Rules
-# For production: use Cloud Load Balancer (automatic SSL cert via Cloud Armor/Cloudflare)
-# Set to "false" for internal-only deployment
+# Expose application via GCP Firewall rules (set false for internal-only)
 EXPOSE_PUBLIC_PORTS="true"
-
-# GCP Firewall Rule Name (created by gcp_deploy.sh)
 GCP_FIREWALL_RULE_NAME="allow-freescout-https"
 
-# IP addresses allowed to access the application
-# Format: comma-separated list of CIDR blocks
-# Examples:
-#   - "0.0.0.0/0"                    (anyone — gcp_deploy.sh will require confirmation)
-#   - "10.0.0.0/8"                   (GCP internal network)
-#   - "203.0.113.0/24"               (your office subnet)
-#   - "203.0.113.5/32,203.0.113.6/32" (specific IPs)
-# ⚠ REQUIRED: leave empty to force an explicit choice. Do not use 0.0.0.0/0 for production.
-ALLOWED_SOURCE_RANGES=""
+# Allowed source CIDRs  — must be set explicitly (no default to force a decision)
+# Examples:  "203.0.113.0/24"  |  "10.0.0.0/8"  |  "0.0.0.0/0" (public, use with care)
+ALLOWED_SOURCE_RANGES=""                  # ← REQUIRED: set before deploying
 
-# Docker Network Subnet (Avoid conflicts with existing GCP VPC)
 DOCKER_SUBNET="172.20.0.0/16"
 
 #===============================================================================
-# DATABASE SETTINGS
+# DATABASE
 #===============================================================================
-# ⚠ PRODUCTION RECOMMENDATION: Use Google Cloud SQL (Option B).
-#   Embedded MariaDB (Option A) is a single point of failure with no replication
-#   or automated backups. It is suitable for development and proof-of-concept only.
-#
-# OPTION A: Embedded MariaDB in Docker (dev/POC only — single-VM, no HA)
-# OPTION B: Google Cloud SQL (production — managed, HA, automatic backups)
-#   Setup:
-#   1. Create a Cloud SQL MySQL/MariaDB instance in GCP Console
-#   2. Set DB_HOST to the instance's private IP (enable Private IP in Cloud SQL)
-#   3. Set CLOUD_SQL_INSTANCE to "project:region:instance-name" for Auth Proxy
-#   4. Optionally enable VPC Service Controls for network isolation
-#
-# Default here is embedded (Option A). For production, set DB_HOST to Cloud SQL IP.
-
-# Database host (localhost for embedded Docker; update for Cloud SQL)
+# Use "db" for the embedded Docker container; set to Cloud SQL private IP for prod.
 DB_HOST="db"
-
-# Database root password (CHANGE THIS!)
-DB_ROOT_PASS="ChangeMe_RootPassword123!"
-
-# Database application user
 DB_USER="freescout"
-DB_PASS="ChangeMe_AppPassword123!"
 DB_NAME="freescout"
 
+# Database root password
+# Leave blank when USE_GCP_SECRET_MANAGER=true — pulled from Secret Manager.
+DB_ROOT_PASS=""
+DB_ROOT_PASS_SECRET="freescout-db-root-pass"
+
+# Database application-user password
+DB_PASS=""
+DB_PASS_SECRET="freescout-db-pass"
+
 #===============================================================================
-# DEFAULT/TESTING USERS (Created on fresh install)
+# APPLICATION USERS  (seeded on first install)
 #===============================================================================
 
-# 1. Admin User (Full System Access)
-ADMIN_EMAIL="admin@example.com"
-ADMIN_PASS="ChangeMe_AdminPassword123!"
+# 1. Admin — full system access
+ADMIN_EMAIL="admin@example.com"           # ← REQUIRED: change before deploying
 ADMIN_FIRST_NAME="System"
 ADMIN_LAST_NAME="Administrator"
+ADMIN_PASS=""
+ADMIN_PASS_SECRET="freescout-admin-pass"
 
-# 2. Agent User (Standard Support Access)
+# 2. Agent — standard support access
 AGENT_EMAIL="agent@example.com"
-AGENT_PASS="ChangeMe_AgentPassword123!"
 AGENT_FIRST_NAME="Support"
 AGENT_LAST_NAME="Agent"
+AGENT_PASS=""
+AGENT_PASS_SECRET="freescout-agent-pass"
 
-# 3. Finance User (Billing & Invoice Access)
+# 3. Finance — billing & invoice access
 FINANCE_EMAIL="finance@example.com"
-FINANCE_PASS="ChangeMe_FinancePassword123!"
 FINANCE_FIRST_NAME="Finance"
 FINANCE_LAST_NAME="Manager"
+FINANCE_PASS=""
+FINANCE_PASS_SECRET="freescout-finance-pass"
 
-# 4. Reporter User (Read-Only Access)
+# 4. Reporter — read-only access
 REPORTER_EMAIL="reporter@example.com"
-REPORTER_PASS="ChangeMe_ReporterPassword123!"
 REPORTER_FIRST_NAME="Report"
 REPORTER_LAST_NAME="Viewer"
+REPORTER_PASS=""
+REPORTER_PASS_SECRET="freescout-reporter-pass"
 
 #===============================================================================
-# SSL/TLS SETTINGS
+# SSL / TLS
 #===============================================================================
-# GCP supports multiple SSL/TLS options:
-#
-# 1. Self-Signed Certificates (default, development/testing)
-#    - Generated on initial deploy
-#    - Works with load balancers that do HTTPS termination
-#    - Clients will warn about untrusted cert
-#
-# 2. Google Managed Certificates (production, requires Cloud Load Balancer)
-#    - Automatically provisioned and renewed
-#    - Requires public domain with DNS pointing to load balancer IP
-#    - Configure via: gcloud compute ssl-certificates create
-#
-# 3. Let's Encrypt via Certbot (requires public IP + domain)
-#    - Install certbot in app container
-#    - Setup auto-renewal via cron
-#
-# Default: Self-signed (generated by docker_deploy.sh)
-USE_MANAGED_SSL="false"  # Set to true if using GCP managed certificates
-
-# If using GCP managed certificates, specify the certificate name
+# "false" = self-signed cert (generated at deploy time — browsers will warn)
+# "true"  = GCP Managed Certificate (requires Cloud Load Balancer + public domain)
+USE_MANAGED_SSL="false"
 # GCP_SSL_CERTIFICATE_NAME="freescout-ssl-cert"
 
-# If using Let's Encrypt, provide your email for certificate notifications
+# Let's Encrypt email (only used when running certbot inside the app container)
 LETSENCRYPT_EMAIL=""
 
 #===============================================================================
-# INTEGRATIONS (Optional)
+# INTEGRATIONS  (optional)
 #===============================================================================
 
-# Google OAuth (for GCP-native authentication)
-# Create credentials at: https://console.cloud.google.com/credentials
+# Google OAuth — create credentials at https://console.cloud.google.com/credentials
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
 GOOGLE_ADMIN_EMAILS=""
 GOOGLE_ALLOWED_DOMAINS=""
 
-#===============================================================================
-# Action1 RMM API Keys (3 Roles — Least Privilege)
-#===============================================================================
-# Each role has a separate OAuth2 Client ID + Client Secret, scoped to only
-# the permissions that role needs. Create these in the Action1 dashboard.
-#
-# Sync  (Role A) — Read-only: View Endpoints, Software Inventory, Groups
-# Run   (Role B) — Executor:  Run pre-vetted scripts only, View Automation History
-# Manage(Role C) — Admin/Dev: Create/modify/delete scripts, Manage Software Repo
-#
-# Region: us | eu | ap (shared across all roles)
+# Action1 RMM API Keys (3 roles: Sync / Run / Manage — least-privilege)
+# Region: us | eu | ap
 ACTION1_REGION="us"
 
 ACTION1_SYNC_CLIENT_ID=""
@@ -182,53 +130,18 @@ ACTION1_MANAGE_CLIENT_ID=""
 ACTION1_MANAGE_CLIENT_SECRET=""
 
 #===============================================================================
-# GCP SECRET MANAGER  (Recommended for production)
+# MODULES
 #===============================================================================
-# Pull sensitive credentials from GCP Secret Manager instead of storing them
-# in plaintext in deploy.conf.  Set USE_GCP_SECRET_MANAGER="true" to enable.
-#
-# Prerequisites:
-#   1. gcloud CLI authenticated (or Compute Engine default service account)
-#   2. IAM role on the SA: roles/secretmanager.secretAccessor
-#
-# Create secrets once (run from any authenticated workstation):
-#   echo -n 'ghp_yourtoken'  | gcloud secrets create freescout-repo-token    --data-file=- --replication-policy=automatic
-#   echo -n 'StrongRootPass' | gcloud secrets create freescout-db-root-pass  --data-file=- --replication-policy=automatic
-#   echo -n 'StrongAppPass'  | gcloud secrets create freescout-db-pass       --data-file=- --replication-policy=automatic
-#   echo -n 'StrongAdmin'    | gcloud secrets create freescout-admin-pass    --data-file=- --replication-policy=automatic
-#
-# Values in deploy.conf are used as fallback if a secret cannot be fetched.
-USE_GCP_SECRET_MANAGER="false"
-REPO_TOKEN_SECRET="freescout-repo-token"
-DB_ROOT_PASS_SECRET="freescout-db-root-pass"
-DB_PASS_SECRET="freescout-db-pass"
-ADMIN_PASS_SECRET="freescout-admin-pass"
-
-#===============================================================================
-# ADVANCED & MODULES
-#===============================================================================
-
-# GitHub Token — REQUIRED for all BorealTek private module repos
-# The core app repo (Scotchmcdonald/freescout) is PUBLIC and does not need this.
-# Create a Personal Access Token at: https://github.com/settings/tokens
-# Required scopes: repo (full control of private repositories)
-#
-# ⚠ SECURITY: Do NOT store a real token here in version control.
-# For production, pull this from GCP Secret Manager at deploy time:
-#
-#   export REPO_TOKEN=$(gcloud secrets versions access latest --secret="freescout-repo-token")
-#
-# Create the secret once with:
-#   echo -n "ghp_your_token_here" | gcloud secrets create freescout-repo-token \
-#     --data-file=- --replication-policy=automatic
+# GitHub PAT — required to clone private BorealTek module repositories.
+# Leave blank when USE_GCP_SECRET_MANAGER=true (pulled from Secret Manager).
+# Do NOT commit a real token here.
 export REPO_TOKEN=""
+REPO_TOKEN_SECRET="freescout-repo-token"
 
-# Modules to install for this deployment.
-# Format: "ModuleName|RepoURL|REPO_TOKEN|Branch"
+# Modules to install.  Format: "Name|RepoURL|REPO_TOKEN|Branch"
+# See deployment/modules.manifest.json for all available modules and profiles.
 #
-# DEPLOYMENT PROFILES:
-#
-# FULL (BorealTek internal — all modules):
+# FULL (BorealTek internal — all 18 modules):
 MODULES_TO_INSTALL=(
     "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
     "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
@@ -250,8 +163,6 @@ MODULES_TO_INSTALL=(
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
 
-# To use a different profile, uncomment and edit:
-#
 # CORE-MSP (helpdesk + CRM + billing + assets + portal):
 # MODULES_TO_INSTALL=(
 #     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
@@ -260,7 +171,7 @@ MODULES_TO_INSTALL=(
 #     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
 #     "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
 # )
-#
+
 # HELPDESK-ONLY (CRM + portal + knowledge base):
 # MODULES_TO_INSTALL=(
 #     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
@@ -269,57 +180,34 @@ MODULES_TO_INSTALL=(
 # )
 
 #===============================================================================
-# GCP-SPECIFIC MONITORING & LOGGING
+# GCP MONITORING & LOGGING
 #===============================================================================
-
-# Enable GCP Cloud Logging (Docker logs shipped via Google Cloud Ops Agent)
-# Requires the Ops Agent installed on the Compute Engine host.
-# Install guide printed by gcp_deploy.sh when this is true.
-# View logs at: https://console.cloud.google.com/logs
+# Ship Docker logs to GCP Cloud Logging via the Ops Agent (install instructions
+# printed by gcp_deploy.sh when enabled).
 ENABLE_GCP_LOGGING="true"
 
-# GCP Cloud Monitoring (CPU, memory, disk metrics)
-# Auto-enabled on Compute Engine instances; this flag controls whether
-# gcp_deploy.sh displays the monitoring setup guidance.
+# GCP Cloud Monitoring — CPU / memory / disk metrics (auto-enabled on GCE)
 ENABLE_GCP_MONITORING="true"
 
 #===============================================================================
 # BACKUP & DISASTER RECOVERY
 #===============================================================================
-
-# Enable automated database backups to GCP Cloud Storage
-# Requires: gsutil configured and authenticated (or Workload Identity on GKE)
-# ⚠ WARNING: Disable this only for dev/test. Production deployments should always
-#            have backups enabled to prevent data loss.
-ENABLE_GCP_BACKUPS="false"  # TODO: set to "true" before going live
-
-# GCP Cloud Storage bucket for database backups
-# Format: gs://my-bucket-name/freescout/
-GCP_BACKUP_BUCKET=""
-
-# Backup schedule (cron format, runs nightly by default)
-# Default: 02:00 UTC daily
-BACKUP_SCHEDULE="0 2 * * *"
+# Automated database backups to GCP Cloud Storage.
+# Requires: gsutil authenticated (or Workload Identity).
+# ⚠ Set to "true" before going live — never run production without backups.
+ENABLE_GCP_BACKUPS="false"
+GCP_BACKUP_BUCKET=""        # Format: gs://my-bucket/freescout/
+BACKUP_SCHEDULE="0 2 * * *" # Cron format — default: 02:00 UTC daily
 
 #===============================================================================
 # MAINTENANCE & DEBUGGING
 #===============================================================================
-
-# Enable verbose logging during deployment
-# NOTE: These three variables (VERBOSE_LOGGING, KEEP_ARTIFACTS, USE_MANAGED_SSL)
-# are accepted by docker_deploy.sh but not yet acted upon by gcp_deploy.sh.
-# They are kept here for forward compatibility.
 VERBOSE_LOGGING="false"
-
-# Keep deployment artifacts (logs, build cache) for debugging
 KEEP_ARTIFACTS="false"
 
-# Automatically reuse existing database on redeploy
-# Set to "true" to preserve data when re-running docker_deploy.sh
-# ⚠ First-deploy note: on a fresh VM this has no effect, but if re-deploying
-#   over an existing container set, "false" will drop and recreate the database.
-#   Confirm your backup strategy before setting this to "false" in production.
+# Set "true" to preserve existing database on redeploy (no data loss).
+# ⚠ First deploy on a fresh VM: this has no effect.
 REUSE_DB="true"
 
-# Preserve admin password on redeploy (if DB already exists)
+# Set "true" to skip admin password reset on redeploy.
 PRESERVE_ADMIN_PASS="true"

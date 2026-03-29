@@ -284,6 +284,19 @@ validate_boolean() {
     fi
 }
 
+# Returns 0 if the given secret-name variable is set AND USE_GCP_SECRET_MANAGER=true.
+# Usage: is_sm_managed "DB_ROOT_PASS_SECRET" && echo "managed by SM"
+is_sm_managed() {
+    local secret_var="$1"
+    local use_sm
+    use_sm=$(get_value "USE_GCP_SECRET_MANAGER")
+    [ "$use_sm" = "true" ] || return 1
+    local secret_name
+    secret_name=$(get_value "$secret_var")
+    [ -n "$secret_name" ] || return 1
+    return 0
+}
+
 #===============================================================================
 # MAIN VALIDATION FLOW
 #===============================================================================
@@ -311,9 +324,21 @@ main() {
     # Critical fields
     echo -e "${YELLOW}2. Validating CRITICAL settings (must fix before deploy)...${NC}"
     validate_domain "DOMAIN_NAME" "Domain Name"
-    validate_password "ADMIN_PASS" "Admin Password" 8
-    validate_password "DB_ROOT_PASS" "Database Root Password" 8
-    validate_password "DB_PASS" "Database User Password" 8
+    if is_sm_managed "ADMIN_PASS_SECRET"; then
+        log_success "Admin Password: managed by Secret Manager ($(get_value ADMIN_PASS_SECRET))"
+    else
+        validate_password "ADMIN_PASS" "Admin Password" 8
+    fi
+    if is_sm_managed "DB_ROOT_PASS_SECRET"; then
+        log_success "Database Root Password: managed by Secret Manager ($(get_value DB_ROOT_PASS_SECRET))"
+    else
+        validate_password "DB_ROOT_PASS" "Database Root Password" 8
+    fi
+    if is_sm_managed "DB_PASS_SECRET"; then
+        log_success "Database User Password: managed by Secret Manager ($(get_value DB_PASS_SECRET))"
+    else
+        validate_password "DB_PASS" "Database User Password" 8
+    fi
     validate_email "ADMIN_EMAIL" "Admin Email"
     echo ""
 
@@ -363,16 +388,18 @@ main() {
         fi
 
         if [ "$module_count" -gt 0 ]; then
-            if validate_key "REPO_TOKEN"; then
+            if is_sm_managed "REPO_TOKEN_SECRET"; then
+                log_success "REPO_TOKEN: managed by Secret Manager ($(get_value REPO_TOKEN_SECRET))"
+            elif validate_key "REPO_TOKEN"; then
                 local repo_token
                 repo_token=$(get_value "REPO_TOKEN")
                 if [[ "$repo_token" =~ ^(REPO_TOKEN|ghp_your_token_here)$ ]] || [ -z "$repo_token" ]; then
-                    log_error "REPO_TOKEN is required when MODULES_TO_INSTALL has entries"
+                    log_error "REPO_TOKEN is required when MODULES_TO_INSTALL has entries (or enable USE_GCP_SECRET_MANAGER=true)"
                 else
                     log_success "REPO_TOKEN is set for module repository access"
                 fi
             else
-                log_error "REPO_TOKEN is required when MODULES_TO_INSTALL has entries"
+                log_error "REPO_TOKEN is required when MODULES_TO_INSTALL has entries (or enable USE_GCP_SECRET_MANAGER=true)"
             fi
         fi
     else

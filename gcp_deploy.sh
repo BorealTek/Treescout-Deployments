@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #===============================================================================
-# FreeScout GCP Deployer
+# TreeScout GCP Deployer
 #
 # Enterprise-grade deployment script for Google Cloud Platform (GCP):
 # - Auto-detects GCP instance metadata (project, zone, IP)
@@ -220,9 +220,13 @@ load_config() {
     fi
 
     if [ "$module_count" -gt 0 ] && [ -z "${REPO_TOKEN:-}" ]; then
-        log_error "REPO_TOKEN is empty but MODULES_TO_INSTALL contains ${module_count} entries"
-        log_info "Set REPO_TOKEN in deploy.conf to a GitHub Personal Access Token with repo scope"
-        exit 1
+        if [ "${USE_GCP_SECRET_MANAGER:-false}" = "true" ] && [ -n "${REPO_TOKEN_SECRET:-}" ]; then
+            log_info "REPO_TOKEN will be pulled from Secret Manager (${REPO_TOKEN_SECRET})"
+        else
+            log_error "REPO_TOKEN is empty but MODULES_TO_INSTALL contains ${module_count} entries"
+            log_info "Set REPO_TOKEN in deploy.conf, or enable USE_GCP_SECRET_MANAGER=true with REPO_TOKEN_SECRET"
+            exit 1
+        fi
     fi
 
     if [ "$module_count" -eq 0 ]; then
@@ -248,7 +252,7 @@ create_firewall_rules() {
         log_code "gcloud compute firewall-rules create ${GCP_FIREWALL_RULE_NAME} \\"
         log_code "  --allow=tcp:443,tcp:80 \\"
         log_code "  --source-ranges=${ALLOWED_SOURCE_RANGES} \\"
-        log_code "  --target-tags=freescout"
+        log_code "  --target-tags=treescout"
         return 0
     fi
 
@@ -267,13 +271,13 @@ create_firewall_rules() {
     if gcloud compute firewall-rules create "${GCP_FIREWALL_RULE_NAME}" \
         --allow=tcp:443,tcp:80 \
         --source-ranges="${ALLOWED_SOURCE_RANGES}" \
-        --target-tags=freescout \
-        --description="FreeScout HTTPS/HTTP access" \
+        --target-tags=treescout \
+        --description="TreeScout HTTPS/HTTP access" \
         --project="${GCP_PROJECT_ID:-}"; then
         log_success "Firewall rule created successfully"
-        log_info "To apply this rule to the instance, add the 'freescout' network tag:"
+        log_info "To apply this rule to the instance, add the 'treescout' network tag:"
         log_code "gcloud compute instances add-tags ${GCP_INSTANCE_NAME} \\"
-        log_code "  --tags=freescout --zone=${GCP_ZONE}"
+        log_code "  --tags=treescout --zone=${GCP_ZONE}"
     else
         log_warning "Failed to create firewall rule — you may need to do this manually"
     fi
@@ -292,10 +296,10 @@ apply_firewall_tags() {
         return 0
     fi
 
-    log_info "Adding 'freescout' network tag to instance..."
+    log_info "Adding 'treescout' network tag to instance..."
 
     if gcloud compute instances add-tags "${GCP_INSTANCE_NAME}" \
-        --tags=freescout \
+        --tags=treescout \
         --zone="${GCP_ZONE}" \
         --project="${GCP_PROJECT_ID:-}" 2>/dev/null; then
         log_success "Network tag applied"
@@ -353,7 +357,7 @@ setup_monitoring() {
     log_info "Monitoring is auto-enabled on GCP Compute Engine instances"
     log_info "View metrics at: https://console.cloud.google.com/monitoring"
     log_code "gcloud monitoring dashboards create --config-from-file=- <<EOF"
-    log_code "{\"displayName\": \"FreeScout\"}"
+    log_code "{\"displayName\": \"TreeScout\"}"
     log_code "EOF"
 }
 
@@ -389,10 +393,13 @@ pull_gcp_secrets() {
         fi
     }
 
-    [ -n "${REPO_TOKEN_SECRET:-}" ]   && _pull_one_secret "REPO_TOKEN"   "$REPO_TOKEN_SECRET"
-    [ -n "${DB_ROOT_PASS_SECRET:-}" ] && _pull_one_secret "DB_ROOT_PASS" "$DB_ROOT_PASS_SECRET"
-    [ -n "${DB_PASS_SECRET:-}" ]      && _pull_one_secret "DB_PASS"      "$DB_PASS_SECRET"
-    [ -n "${ADMIN_PASS_SECRET:-}" ]   && _pull_one_secret "ADMIN_PASS"   "$ADMIN_PASS_SECRET"
+    [ -n "${REPO_TOKEN_SECRET:-}" ]    && _pull_one_secret "REPO_TOKEN"    "$REPO_TOKEN_SECRET"
+    [ -n "${DB_ROOT_PASS_SECRET:-}" ]  && _pull_one_secret "DB_ROOT_PASS"  "$DB_ROOT_PASS_SECRET"
+    [ -n "${DB_PASS_SECRET:-}" ]       && _pull_one_secret "DB_PASS"       "$DB_PASS_SECRET"
+    [ -n "${ADMIN_PASS_SECRET:-}" ]    && _pull_one_secret "ADMIN_PASS"    "$ADMIN_PASS_SECRET"
+    [ -n "${AGENT_PASS_SECRET:-}" ]    && _pull_one_secret "AGENT_PASS"    "$AGENT_PASS_SECRET"
+    [ -n "${FINANCE_PASS_SECRET:-}" ]  && _pull_one_secret "FINANCE_PASS"  "$FINANCE_PASS_SECRET"
+    [ -n "${REPORTER_PASS_SECRET:-}" ] && _pull_one_secret "REPORTER_PASS" "$REPORTER_PASS_SECRET"
 
     log_success "$secrets_pulled secret(s) pulled from GCP Secret Manager"
 }
@@ -482,7 +489,7 @@ show_banner() {
     clear
     echo -e "${CYAN}"
     echo "╔═══════════════════════════════════════════════════════════════╗"
-    echo "║                   FreeScout GCP Deployer                      ║"
+    echo "║                   TreeScout GCP Deployer                      ║"
     echo "║         Enterprise Help Desk on Google Cloud Platform         ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -544,7 +551,7 @@ main() {
 
     show_banner
 
-    log_info "FreeScout GCP Deployer v$SCRIPT_VERSION"
+    log_info "TreeScout GCP Deployer v$SCRIPT_VERSION"
     [ "$AUTO_APPROVE" = true ] && log_info "Non-interactive mode active (--yes / CI=true)"
     echo ""
 
