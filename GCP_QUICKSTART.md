@@ -1,19 +1,20 @@
 # FreeScout GCP Deployment — Quick Start
 
-Deploy FreeScout on Google Cloud Platform in 3 commands.
+Deploy FreeScout on Google Cloud Platform in 4 steps.
+Secrets are stored in **GCP Secret Manager** — no passwords in files.
 
 ## 📋 Requirements
 
 - **GCP Account** with billing enabled
-- **gcloud CLI** installed (https://cloud.google.com/sdk/docs/install)
-- **GitHub PAT Token** for private modules (https://github.com/settings/tokens)
-- **Domain name** (or use GCP IP temporarily)
+- **gcloud CLI** installed and authenticated (`gcloud auth login`)
+- **GitHub PAT Token** for private BorealTek modules (`https://github.com/settings/tokens` — scope: `repo`)
+- **Domain name** or GCP external IP (e.g. `34.x.x.x.nip.io` for testing)
 
 ---
 
-## 🚀 Deploy in 3 Steps
+## 🚀 Deploy in 4 Steps
 
-### Step 1: Create GCP Instance
+### Step 1 — Create GCP Instance
 
 ```bash
 gcloud compute instances create freescout-prod \
@@ -24,54 +25,80 @@ gcloud compute instances create freescout-prod \
   --boot-disk-size=50GB
 ```
 
-**Then SSH in:**
+**SSH in:**
 ```bash
 gcloud compute ssh freescout-prod --zone=us-central1-a
 ```
 
-### Step 2: Setup Configuration
+---
+
+### Step 2 — Bootstrap Secrets (run from your workstation, not the VM)
+
+This creates all credentials in GCP Secret Manager — **nothing sensitive ever touches the config file**.
 
 ```bash
-# Clone deployment repo
+# Clone the deployment repo
 git clone https://github.com/BorealTek/Treescout-Deployments.git
 cd Treescout-Deployments
 
-# Copy config template
-cp deployment/deploy.conf.gcp deploy.conf
+# Interactive wizard — prompts for each secret, confirms, then creates/updates them
+bash deployment/gcp-secrets-bootstrap.sh
+```
 
-# Edit ALL these values:
+The wizard will prompt you for:
+
+| Secret | GCP Secret Manager name |
+|--------|------------------------|
+| GitHub PAT (scope: `repo`) | `freescout-repo-token` |
+| Database root password | `freescout-db-root-pass` |
+| Database app-user password | `freescout-db-pass` |
+| Admin user password | `freescout-admin-pass` |
+| Agent user password _(optional)_ | `freescout-agent-pass` |
+| Finance user password _(optional)_ | `freescout-finance-pass` |
+| Reporter user password _(optional)_ | `freescout-reporter-pass` |
+
+It also grants the Compute Engine default service account the `secretAccessor` IAM role so the VM can read secrets at deploy time.
+
+---
+
+### Step 3 — Configure Deployment
+
+On the **VM** (after SSH):
+
+```bash
+# Clone deployment repo (if not already cloned on the VM)
+git clone https://github.com/BorealTek/Treescout-Deployments.git /opt/treescout-deploy
+cd /opt/treescout-deploy
+
+# Copy the GCP template (deploy.conf is gitignored — safe to fill in)
+cp deployment/deploy.conf.gcp deploy.conf
+chmod 600 deploy.conf
 nano deploy.conf
 ```
 
-**Critical edits in deploy.conf:**
+**Only these two values need editing** — everything else is pulled from Secret Manager at deploy time:
+
 ```bash
-DOMAIN_NAME="your-domain.com"              # or use GCP external IP
-ADMIN_EMAIL="admin@yourcompany.com"
-ADMIN_PASS="StrongPassword123!"            # Change from default!
-DB_ROOT_PASS="DatabaseRootPass123!"        # Change from default!
-DB_PASS="DatabaseUserPass123!"             # Change from default!
-export REPO_TOKEN="ghp_xxxxxxxxxxxx"       # GitHub PAT token
+DOMAIN_NAME="your-domain.com"          # ← your actual domain or external IP
+ALLOWED_SOURCE_RANGES="203.0.113.5/32" # ← your IP(s) — use 0.0.0.0/0 only for testing
 ```
 
-**Lock the file to other viewers**
-```bash
-chmod 600 deploy.conf
-```
-
-**Validate config before deploying:**
+**Validate before deploying:**
 ```bash
 bash deployment/gcp-config-validate.sh
 ```
 
-For BorealTek internal deployments, keep the default full `MODULES_TO_INSTALL` array from `deploy.conf.gcp` (18 modules, including AppHealth, MiddleMan, DeploymentManager).
+All passwords should show `managed by Secret Manager` — no errors expected.
 
-### Step 3: Deploy
+---
+
+### Step 4 — Deploy
 
 ```bash
 sudo bash deployment/gcp_deploy.sh
 ```
 
-**Deployment takes 10-20 minutes.** Watch logs in another terminal:
+Deployment takes **10–20 minutes**. Watch live in a second terminal:
 ```bash
 cd /opt/freescout-docker && docker compose logs -f app
 ```
@@ -85,227 +112,152 @@ cd /opt/freescout-docker && docker compose logs -f app
 gcloud compute instances describe freescout-prod \
   --zone=us-central1-a \
   --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
-
-# Open in browser (replace with actual IP)
-https://1.2.3.4
-
-# Accept self-signed certificate warning
-# Login: admin@yourcompany.com / (your admin password)
 ```
+
+Open `https://<EXTERNAL_IP>` in your browser, accept the self-signed certificate warning,
+and log in with the admin email and the password you entered in Step 2.
 
 ---
 
-## 📂 Files Created
+## 🔧 Configuration Reference
 
-| File | Purpose |
-|------|---------|
-| **gcp_deploy.sh** | Main deployment script (auto-detects GCP, creates firewall) |
-| **deploy.conf.gcp** | GCP configuration template (edit before deploy) |
-| **gcp-config-validate.sh** | Validates deploy.conf before deployment |
-| **GCP_DEPLOYMENT.md** | Complete guide with production upgrades |
-| **GCP_CHECKLIST.md** | Quick reference & troubleshooting |
-| **GCP_README.md** | Overview of all GCP files |
+The following values in `deploy.conf` are **non-secret** and can be edited freely:
 
----
+| Key | Default | Notes |
+|-----|---------|-------|
+| `DOMAIN_NAME` | _(required)_ | Domain or GCP IP |
+| `ADMIN_EMAIL` | `admin@example.com` | Admin login email |
+| `ALLOWED_SOURCE_RANGES` | _(required)_ | CIDR(s) for firewall rule |
+| `EXPOSE_PUBLIC_PORTS` | `true` | Set `false` for internal-only |
+| `REUSE_DB` | `true` | Preserve DB on redeploy |
+| `ENABLE_GCP_LOGGING` | `true` | Ship logs to Cloud Logging |
+| `ENABLE_GCP_BACKUPS` | `false` | **Set `true` for production** |
+| `GCP_BACKUP_BUCKET` | _(empty)_ | `gs://your-bucket/freescout/` |
 
-## 🔧 Configuration Options
+### Modules (choose a profile in `deploy.conf`)
 
-### Essential
 ```bash
-DOMAIN_NAME="your-domain.com"
-ADMIN_EMAIL="admin@company.com"
-ADMIN_PASS="strong-password"
-REPO_TOKEN="ghp_xxxxx"  # GitHub PAT
-```
-
-### Database
-```bash
-DB_ROOT_PASS="strong-root-password"
-DB_PASS="strong-user-password"
-DB_NAME="freescout"
-```
-
-### Network
-```bash
-EXPOSE_PUBLIC_PORTS="true"              # Expose to internet
-ALLOWED_SOURCE_RANGES="0.0.0.0/0"       # Or restrict to your IP: "203.0.113.5/32"
-```
-
-### SSL/TLS
-```bash
-USE_MANAGED_SSL="false"                 # Use self-signed (default)
-# Other options: Google Managed, Let's Encrypt (see GCP_DEPLOYMENT.md)
-```
-
-### Modules (Choose What to Install)
-```bash
-# Full internal deployment: keep the default full array from deploy.conf.gcp
-# (includes AppHealth, MiddleMan, DeploymentManager).
+# Full internal deployment — 18 modules (default in deploy.conf.gcp)
 # Source of truth: deployment/modules.manifest.json
 
-# Example trimmed client profile:
+# Example trimmed client profile — edit MODULES_TO_INSTALL in deploy.conf:
 MODULES_TO_INSTALL=(
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
     "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
-   "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
-   "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+    "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+    "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
 )
 ```
 
 ---
 
-## 📖 Documentation
+## 📂 Key Files
 
-- **GCP_DEPLOYMENT.md** — Full guide, production upgrades, cost optimization
-- **GCP_CHECKLIST.md** — Pre/post deployment checklist, troubleshooting
-- **GCP_README.md** — Overview of all files and architecture
+| File | Purpose |
+|------|---------|
+| `gcp-secrets-bootstrap.sh` | Create/update all secrets in Secret Manager (run once from workstation) |
+| `gcp_deploy.sh` | Main deployer — detects GCP, creates firewall, launches docker_deploy.sh |
+| `deploy.conf.gcp` | Config template (no secrets — committed to git) |
+| `gcp-config-validate.sh` | Pre-deploy config validator |
+| `GCP_DEPLOYMENT.md` | Full guide — production upgrades, Cloud SQL, SSL, cost |
+| `GCP_CHECKLIST.md` | Pre/post-deploy checklist, troubleshooting |
 
 ---
 
 ## 🛠️ Common Tasks
 
-### Access Application
-```bash
-# Get external IP
-gcloud compute instances describe freescout-prod --format='get(networkInterfaces[0].accessConfigs[0].natIP)' --zone=us-central1-a
-
-# Open in browser
-https://<EXTERNAL_IP>
-```
-
-### SSH into Instance
-```bash
-gcloud compute ssh freescout-prod --zone=us-central1-a
-```
-
 ### View Logs
 ```bash
-# SSH in, then:
 cd /opt/freescout-docker
-docker compose logs -f app    # Application logs
-docker compose logs -f queue  # Job queue logs
-docker compose logs -f db     # Database logs
+docker compose logs -f app     # Application
+docker compose logs -f queue   # Job queue
+docker compose logs -f db      # Database
 ```
 
-### Stop/Start Services
+### Stop / Start Services
 ```bash
 cd /opt/freescout-docker
-docker compose stop           # Stop all
-docker compose start          # Start all
-docker compose restart queue  # Restart specific service
+docker compose stop
+docker compose start
+docker compose restart queue
 ```
 
 ### Database Backup
 ```bash
 cd /opt/freescout-docker
-docker compose exec db mysqldump -u freescout -p freescout > /tmp/backup.sql
+docker compose exec db mysqldump -u freescout -p freescout > /tmp/backup-$(date +%F).sql
+```
+
+### Rotate a Secret
+```bash
+# Update the value in Secret Manager (no redeploy needed for next deploy)
+echo -n "NewStrongPassword!" | gcloud secrets versions add freescout-admin-pass --data-file=-
 ```
 
 ---
 
 ## ⚠️ Troubleshooting
 
-### Cannot Access Application?
-1. Check external IP is assigned:
-   ```bash
-   gcloud compute instances describe freescout-prod --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
-   ```
-
-2. Check firewall rule exists:
-   ```bash
-   gcloud compute firewall-rules list --filter="name:allow-freescout"
-   ```
-
-3. Check containers running:
-   ```bash
-   ssh into instance
-   cd /opt/freescout-docker && docker compose ps
-   ```
-
-### Database Connect Failed?
+### Cannot access the application?
 ```bash
-ssh into instance
-cd /opt/freescout-docker
-docker compose logs db | tail -20
-docker compose restart db
+# Check external IP
+gcloud compute instances describe freescout-prod \
+  --format='get(networkInterfaces[0].accessConfigs[0].natIP)' --zone=us-central1-a
+
+# Check firewall rule
+gcloud compute firewall-rules list --filter="name:allow-freescout"
+
+# Check containers
+cd /opt/freescout-docker && docker compose ps
 ```
 
-### Modules Won't Install?
+### Secrets not pulling at deploy time?
 ```bash
-# Check GitHub token is valid
-git ls-remote https://oauth:REPO_TOKEN@github.com/BorealTek/Crm-Module.git
-
-# Token should start with ghp_
-# If expired/invalid, regenerate at: https://github.com/settings/tokens
+# Verify the VM service account has access
+gcloud secrets versions access latest --secret="freescout-repo-token"
+# If denied → re-run: bash deployment/gcp-secrets-bootstrap.sh  (IAM step)
 ```
 
-See **GCP_CHECKLIST.md** for more troubleshooting.
+### Module clone failing?
+```bash
+# Verify token is readable and valid
+gcloud secrets versions access latest --secret="freescout-repo-token"
+# Token must start with ghp_ and have repo scope
+```
+
+See **GCP_CHECKLIST.md** for more troubleshooting steps.
 
 ---
 
-## 💰 Estimated Costs
+## 💰 Estimated Monthly Costs
 
-| Component | Monthly Cost |
-|-----------|--------------|
+| Component | Cost |
+|-----------|------|
 | e2-standard-2 instance | ~$35 |
-| 50 GB disk | ~$2-3 |
-| Networking | ~$0-2 |
+| 50 GB persistent disk | ~$3 |
+| Secret Manager (< 10k accesses) | ~$0 |
+| Networking | ~$1–2 |
 | **Total** | **~$40/month** |
 
-See GCP_DEPLOYMENT.md → "GCP Cost Optimization" for ways to reduce costs.
+See `GCP_DEPLOYMENT.md → GCP Cost Optimization` for ways to reduce costs.
 
 ---
 
-## 🔐 Security Reminders
+## 🔐 Security Checklist
 
-- [ ] Change all default passwords before deploying
-- [ ] Use strong passwords (16+ characters)
-- [ ] Restrict `ALLOWED_SOURCE_RANGES` to your IP for testing
-- [ ] Upgrade from self-signed certs to production certs (Let's Encrypt or Google Managed)
+- [ ] Secrets stored in GCP Secret Manager — not in `deploy.conf`
+- [ ] `deploy.conf` mode `600` (readable only by owner)
+- [ ] `ALLOWED_SOURCE_RANGES` restricted to your IP(s) for production
+- [ ] `ENABLE_GCP_BACKUPS="true"` set before going live
+- [ ] Upgrade self-signed cert to production SSL (Let's Encrypt or GCP Managed)
 - [ ] Enable Cloud Armor for DDoS protection (optional, production)
-- [ ] Enable Cloud Monitoring & Logging for audit trail
 
 ---
 
-## 📞 Need Help?
+## 📖 Full Documentation
 
-| Topic | Resource |
+| Guide | Contents |
 |-------|----------|
-| **GCP Setup Issues** | https://cloud.google.com/compute/docs |
-| **Deployment Errors** | Check logs: `/opt/freescout-docker` |
-| **Configuration** | Edit: `deploy.conf` (see GCP_README.md for options) |
-| **Module Issues** | See: `Modules/*/README.md` |
-| **Quick Reference** | GCP_CHECKLIST.md (pre/post checklists) |
-| **Full Guide** | GCP_DEPLOYMENT.md (complete with examples) |
-
----
-
-## 📋 Next Steps
-
-1. **Customize deploy.conf:**
-   ```bash
-   nano deployment/deploy.conf.gcp
-   ```
-
-2. **Validate configuration:**
-   ```bash
-   bash deployment/gcp-config-validate.sh
-   ```
-
-3. **Deploy:**
-   ```bash
-   sudo bash deployment/gcp_deploy.sh
-   ```
-
-4. **Access at:**
-   ```
-   https://<GCP_EXTERNAL_IP>
-   ```
-
----
-
-**Questions?** See the comprehensive guides:
-- **GCP_DEPLOYMENT.md** — Production setup, upgrades, cost optimization
-- **GCP_CHECKLIST.md** — Troubleshooting and maintenance
-
-Good luck! 🚀
+| **GCP_DEPLOYMENT.md** | Cloud SQL, production SSL, upgrades, cost optimisation |
+| **GCP_CHECKLIST.md** | Pre/post-deploy checklist, maintenance runbook |
+| **GCP_README.md** | Architecture overview, all files explained |

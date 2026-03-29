@@ -4,65 +4,66 @@ Deploy FreeScout on Google Cloud Platform using Docker Compose with enterprise-g
 
 ## Quick Start
 
+> For a self-contained walkthrough see **GCP_QUICKSTART.md**.
+> The steps below are a condensed reference.
+
 ### 1. Create a GCP Compute Engine Instance
 
 ```bash
-# Using gcloud CLI
 gcloud compute instances create freescout-prod \
   --image-family=debian-12 \
   --image-project=debian-cloud \
   --machine-type=e2-standard-2 \
   --zone=us-central1-a \
-  --boot-disk-size=50GB \
-  --tags=http-server,https-server
+  --boot-disk-size=50GB
 
-# SSH into the instance
+# SSH in
 gcloud compute ssh freescout-prod --zone=us-central1-a
 ```
 
-### 2. Clone and Prepare Deployment
+### 2. Bootstrap Secrets (run from your workstation)
+
+Puts all credentials into **GCP Secret Manager** — nothing sensitive goes in the config file.
 
 ```bash
-# On the GCP instance
-cd /tmp
 git clone https://github.com/BorealTek/Treescout-Deployments.git
 cd Treescout-Deployments
-
-# Copy GCP configuration template
-cp deployment/deploy.conf.gcp deploy.conf
-
-# Edit configuration with your settings
-nano deploy.conf
-# CRITICAL: Update these:
-#   DOMAIN_NAME="your-domain.com"
-#   ADMIN_EMAIL="admin@company.com"
-#   ADMIN_PASS="strong-password"
-#   REPO_TOKEN="your-github-pat-token"
-#   DB_ROOT_PASS, DB_PASS (change from defaults!)
+bash deployment/gcp-secrets-bootstrap.sh
 ```
 
-### 3. Run GCP Deployer
+The interactive wizard creates: `freescout-repo-token`, `freescout-db-root-pass`,
+`freescout-db-pass`, `freescout-admin-pass` (and optional user passwords), then grants
+the Compute Engine default service account `roles/secretmanager.secretAccessor`.
+
+### 3. Configure and Validate (on the VM)
 
 ```bash
-# The gcp_deploy.sh script will:
-# ✔ Auto-detect GCP metadata (project, zone, IP)
-# ✔ Create firewall rules
-# ✔ Setup Cloud Logging integration (optional)
-# ✔ Launch docker_deploy.sh
+# Clone on the VM
+git clone https://github.com/BorealTek/Treescout-Deployments.git /opt/treescout-deploy
+cd /opt/treescout-deploy
 
+cp deployment/deploy.conf.gcp deploy.conf
+chmod 600 deploy.conf
+nano deploy.conf   # Set DOMAIN_NAME and ALLOWED_SOURCE_RANGES — all passwords are in SM
+```
+
+```bash
+# Verify — all secrets should show "managed by Secret Manager"
+bash deployment/gcp-config-validate.sh
+```
+
+### 4. Deploy
+
+```bash
 sudo bash deployment/gcp_deploy.sh
 ```
 
-### 4. Access Your Instance
-
 ```bash
-# Get the external IP
+# Access
 EXTERNAL_IP=$(gcloud compute instances describe freescout-prod \
   --zone=us-central1-a \
   --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
-
-echo "Access at: https://$EXTERNAL_IP"
-# Warning: Self-signed certificate — accept the warning in your browser
+echo "https://$EXTERNAL_IP"
 ```
 
 ---
