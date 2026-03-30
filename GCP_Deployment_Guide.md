@@ -40,11 +40,16 @@ Complete guide to deploying FreeScout + all BorealTek modules on Google Cloud Pl
 │  Google Cloud Platform                                       │
 │                                                              │
 │  Secret Manager                                              │
-│  ├─ freescout-repo-token     (GitHub PAT)                   │
-│  ├─ freescout-db-root-pass                                   │
-│  ├─ freescout-db-pass                                        │
+│  ├─ freescout-repo-token                  (GitHub PAT)      │
+│  ├─ freescout-db-root-pass / db-pass                        │
 │  ├─ freescout-admin-pass                                     │
-│  └─ freescout-agent/finance/reporter-pass (optional)        │
+│  ├─ freescout-agent/finance/reporter-pass (optional)        │
+│  ├─ freescout-google-client-id/secret     (optional)        │
+│  ├─ freescout-google-admin-emails         (optional)        │
+│  ├─ freescout-google-allowed-domains      (optional)        │
+│  ├─ freescout-action1-sync-client-id/secret (optional)      │
+│  ├─ freescout-action1-automation-runner-*  (optional)       │
+│  └─ freescout-action1-script-manager-*    (optional)        │
 │                        ↓ pulled at deploy time               │
 │  Compute Engine Instance (e2-standard-2, Debian 12)         │
 │  ├─ External IP ←── GCP Firewall Rule (allow-freescout-https)│
@@ -118,15 +123,44 @@ The wizard will prompt for each secret, confirm your input, and create or update
 
 Secrets created:
 
+**Required secrets:**
+
 | Secret name | What it holds |
 |-------------|---------------|
 | `freescout-repo-token` | GitHub PAT (scope: `repo`) for private module repos |
 | `freescout-db-root-pass` | MariaDB root password |
 | `freescout-db-pass` | MariaDB application-user password |
 | `freescout-admin-pass` | Admin account initial password |
-| `freescout-agent-pass` | Agent account password _(optional)_ |
-| `freescout-finance-pass` | Finance account password _(optional)_ |
-| `freescout-reporter-pass` | Reporter account password _(optional)_ |
+
+**Optional — seeded user accounts:**
+
+| Secret name | What it holds |
+|-------------|---------------|
+| `freescout-agent-pass` | Agent account password |
+| `freescout-finance-pass` | Finance account password |
+| `freescout-reporter-pass` | Reporter account password |
+
+**Optional — Google OAuth (requires GoogleAdmin module):**
+
+| Secret name | What it holds |
+|-------------|---------------|
+| `freescout-google-client-id` | Google OAuth 2.0 Client ID |
+| `freescout-google-client-secret` | Google OAuth 2.0 Client Secret |
+| `freescout-google-admin-emails` | Comma-separated emails auto-promoted to admin on first OAuth sign-in |
+| `freescout-google-allowed-domains` | Comma-separated domains whose users are auto-provisioned as internal accounts |
+
+> **`GOOGLE_ALLOWED_DOMAINS` behaviour:** existing users (already in the database) can always sign in with Google regardless of domain. This setting only gates **new account auto-provisioning** — users from unlisted domains are denied the ability to create a new account via Google OAuth, but can still be added manually by an admin.
+
+**Optional — Action1 RMM (requires Action1 module):**
+
+| Secret name | What it holds |
+|-------------|---------------|
+| `freescout-action1-sync-client-id` | Action1 Sync role OAuth Client ID (read-only inventory) |
+| `freescout-action1-sync-client-secret` | Action1 Sync role OAuth Client Secret |
+| `freescout-action1-automation-runner-client-id` | Action1 Automation Runner role Client ID (execute scripts) |
+| `freescout-action1-automation-runner-client-secret` | Action1 Automation Runner role Client Secret |
+| `freescout-action1-script-manager-client-id` | Action1 Script Manager role Client ID (create/modify scripts) |
+| `freescout-action1-script-manager-client-secret` | Action1 Script Manager role Client Secret |
 
 To rotate any secret later:
 
@@ -178,6 +212,23 @@ Non-secret values you may want to review:
 | `ENABLE_GCP_LOGGING` | `true` | Ships Docker logs to Cloud Logging |
 | `ENABLE_GCP_BACKUPS` | `false` | **Set `true` before going live** |
 | `GCP_BACKUP_BUCKET` | _(empty)_ | `gs://your-bucket/freescout/` |
+
+### Optional integrations
+
+If you populated Google OAuth or Action1 secrets in Phase 2, ensure the `_SECRET` name entries in `deploy.conf` match (they already do in `deploy.conf.gcp`). Leave the plaintext value fields blank — they are filled automatically at deploy time from Secret Manager.
+
+For Google OAuth, also review:
+
+```bash
+GOOGLE_ADMIN_EMAILS=""          # leave blank — pulled from SM via GOOGLE_ADMIN_EMAILS_SECRET
+GOOGLE_ALLOWED_DOMAINS=""       # leave blank — pulled from SM via GOOGLE_ALLOWED_DOMAINS_SECRET
+```
+
+For Action1, set the region if your organisation is outside the US default:
+
+```bash
+ACTION1_REGION="us"             # us | eu | ap
+```
 
 ### Module selection
 

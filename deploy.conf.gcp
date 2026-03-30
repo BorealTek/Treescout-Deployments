@@ -145,6 +145,16 @@ ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
 ACTION1_SCRIPT_MANAGER_CLIENT_SECRET_SECRET="freescout-action1-script-manager-client-secret"
 
 #===============================================================================
+# KROKI — Standalone Diagram Renderer (optional)
+#===============================================================================
+# Set to "true" to auto-start the Kroki container alongside the app stack.
+# Required only when the MiddleMan module's topology/diagram features are used.
+ENABLE_KROKI="false"
+KROKI_PORT="8001"
+MIDDLEMAN_KROKI_URL="http://host.docker.internal:8001"
+MIDDLEMAN_KROKI_TIMEOUT="10"
+
+#===============================================================================
 # MODULES
 #===============================================================================
 # GitHub PAT — required to clone private BorealTek module repositories.

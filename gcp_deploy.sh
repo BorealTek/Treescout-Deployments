@@ -51,6 +51,9 @@ readonly WHITE='\033[38;5;231m'
 readonly GREY='\033[38;5;240m'
 readonly NC='\033[0m'
 
+readonly FOREST='\033[38;5;22m'       # Forest Green
+readonly COLOR_DIM=$GREY
+
 # GCP Metadata Service endpoints
 readonly GCP_METADATA_URL="http://metadata.google.internal/computeMetadata/v1"
 readonly GCP_METADATA_HEADERS="-H Metadata-Flavor:Google"
@@ -496,17 +499,53 @@ health_check_gcp() {
 }
 
 #===============================================================================
+# KROKI (optional diagram renderer)
+#===============================================================================
+
+setup_kroki() {
+    [ "${ENABLE_KROKI:-false}" = "true" ] || return 0
+
+    log_step "Starting Kroki Diagram Renderer"
+
+    local kroki_dir="${SCRIPT_DIR}/kroki"
+    if [ ! -f "${kroki_dir}/compose.yml" ]; then
+        log_warning "Kroki compose.yml not found at ${kroki_dir} — skipping"
+        return 0
+    fi
+
+    if docker compose -f "${kroki_dir}/compose.yml" up -d 2>/dev/null; then
+        log_success "Kroki started on 127.0.0.1:${KROKI_PORT:-8001}"
+    else
+        log_warning "Kroki failed to start — diagrams will use fallback text rendering"
+    fi
+
+    # Export so docker_deploy.sh (exec'd next) picks them up
+    export MIDDLEMAN_KROKI_ENABLED="true"
+    export MIDDLEMAN_KROKI_URL="${MIDDLEMAN_KROKI_URL:-http://host.docker.internal:${KROKI_PORT:-8001}}"
+    export MIDDLEMAN_KROKI_TIMEOUT="${MIDDLEMAN_KROKI_TIMEOUT:-10}"
+}
+
+#===============================================================================
 # DEPLOYMENT
 #===============================================================================
 
 show_banner() {
     clear
-    echo -e "${CYAN}"
-    echo "╔═══════════════════════════════════════════════════════════════╗"
-    echo "║                   TreeScout GCP Deployer                      ║"
-    echo "║         Enterprise Help Desk on Google Cloud Platform         ║"
-    echo "╚═══════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
+    echo -e "${FOREST}       # #### ####${NC}"
+    echo -e "${FOREST}     ### \\/#|### |/####${NC}"
+    echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}      ${CYAN}  ____                        _ _______   _          ${NC}"
+    echo -e "${FOREST}  ###  \\/###|/ \\/ # ###${NC}        ${CYAN} |  _ \\                      | |__   __| | |        ${NC}"
+    echo -e "${FOREST} ##_\\_#\\_\\## | #/###_/_####${NC}   ${CYAN}  | |_) | ___   _ __.__  ___  | |  | |  __| | __     ${NC}"
+    echo -e "${FOREST}## #### # \\ #| /  #### ##/##${NC}    ${CYAN}|  _ < / _ \\| '__/ _ \\/ _ \\\`| |  | |/ _ \\ |/ /     ${NC}"
+    echo -e "${FOREST} __#_--###\`  |{,###---###-~${NC}     ${CYAN}| |_) | (_) | |  | __/ (_| || |  | || __/   <        ${NC}"
+    echo -e "${FOREST}           \\ }{${NC}                 ${CYAN}|____/ \\___/|_|  \\___|\\__,_||_|  |_|\\___|_|\\_\\ ${NC}"
+    echo -e "${FOREST}            }}{${NC}"
+    echo -e "${FOREST}            }}{${NC}                     ${GREEN} T R E E S C O U T   G C P   D E P L O Y E R     ${NC}"
+    echo -e "${FOREST}            }}{${NC}"
+    echo -e "${FOREST}      , -=-~{ .-^- _${NC}"
+    echo -e "${FOREST}            \`${NC}"
+    echo ""
+    echo -e "${COLOR_DIM}────────────────────────────────────────────────────────────────────────${NC}"
 }
 
 show_summary() {
@@ -583,6 +622,7 @@ main() {
 
     setup_cloud_logging
     setup_monitoring
+    setup_kroki
 
     # Show summary
     show_summary
