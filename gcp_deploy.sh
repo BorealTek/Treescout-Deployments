@@ -410,10 +410,10 @@ pull_gcp_secrets() {
     # Action1 RMM integration
     [ -n "${ACTION1_SYNC_CLIENT_ID_SECRET:-}" ]           && _pull_one_secret "ACTION1_SYNC_CLIENT_ID"           "$ACTION1_SYNC_CLIENT_ID_SECRET"
     [ -n "${ACTION1_SYNC_CLIENT_SECRET_SECRET:-}" ]       && _pull_one_secret "ACTION1_SYNC_CLIENT_SECRET"       "$ACTION1_SYNC_CLIENT_SECRET_SECRET"
-    [ -n "${ACTION1_RUN_CLIENT_ID_SECRET:-}" ]            && _pull_one_secret "ACTION1_RUN_CLIENT_ID"            "$ACTION1_RUN_CLIENT_ID_SECRET"
-    [ -n "${ACTION1_RUN_CLIENT_SECRET_SECRET:-}" ]        && _pull_one_secret "ACTION1_RUN_CLIENT_SECRET"        "$ACTION1_RUN_CLIENT_SECRET_SECRET"
-    [ -n "${ACTION1_MANAGE_CLIENT_ID_SECRET:-}" ]         && _pull_one_secret "ACTION1_MANAGE_CLIENT_ID"         "$ACTION1_MANAGE_CLIENT_ID_SECRET"
-    [ -n "${ACTION1_MANAGE_CLIENT_SECRET_SECRET:-}" ]     && _pull_one_secret "ACTION1_MANAGE_CLIENT_SECRET"     "$ACTION1_MANAGE_CLIENT_SECRET_SECRET"
+    [ -n "${ACTION1_AUTOMATION_RUNNER_CLIENT_ID_SECRET:-}" ]     && _pull_one_secret "ACTION1_AUTOMATION_RUNNER_CLIENT_ID"     "$ACTION1_AUTOMATION_RUNNER_CLIENT_ID_SECRET"
+    [ -n "${ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET_SECRET:-}" ] && _pull_one_secret "ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET" "$ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET_SECRET"
+    [ -n "${ACTION1_SCRIPT_MANAGER_CLIENT_ID_SECRET:-}" ]        && _pull_one_secret "ACTION1_SCRIPT_MANAGER_CLIENT_ID"        "$ACTION1_SCRIPT_MANAGER_CLIENT_ID_SECRET"
+    [ -n "${ACTION1_SCRIPT_MANAGER_CLIENT_SECRET_SECRET:-}" ]    && _pull_one_secret "ACTION1_SCRIPT_MANAGER_CLIENT_SECRET"    "$ACTION1_SCRIPT_MANAGER_CLIENT_SECRET_SECRET"
 
     log_success "$secrets_pulled secret(s) pulled from GCP Secret Manager"
 }
@@ -603,7 +603,7 @@ main() {
     log_step "Launching docker_deploy.sh"
     if [ -x "$DOCKER_DEPLOY_SCRIPT" ]; then
         cd "$SCRIPT_DIR"
-        exec sudo bash "$DOCKER_DEPLOY_SCRIPT"
+        exec sudo -E bash "$DOCKER_DEPLOY_SCRIPT"
     else
         log_error "docker_deploy.sh not found or not executable"
         log_info "Expected: $DOCKER_DEPLOY_SCRIPT"

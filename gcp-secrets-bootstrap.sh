@@ -252,10 +252,10 @@ main() {
     log_code "  OPTIONAL (Action1 RMM — 3 roles: Sync / Run / Manage)"
     log_code "    freescout-action1-sync-client-id       Action1 Sync Client ID"
     log_code "    freescout-action1-sync-client-secret   Action1 Sync Client Secret"
-    log_code "    freescout-action1-run-client-id        Action1 Run Client ID"
-    log_code "    freescout-action1-run-client-secret    Action1 Run Client Secret"
-    log_code "    freescout-action1-manage-client-id     Action1 Manage Client ID"
-    log_code "    freescout-action1-manage-client-secret Action1 Manage Client Secret"
+    log_code "    freescout-action1-automation-runner-client-id     Action1 Automation Runner Client ID"
+    log_code "    freescout-action1-automation-runner-client-secret Action1 Automation Runner Client Secret"
+    log_code "    freescout-action1-script-manager-client-id        Action1 Script Manager Client ID"
+    log_code "    freescout-action1-script-manager-client-secret    Action1 Script Manager Client Secret"
     echo ""
 
     check_prereqs
@@ -304,10 +304,10 @@ main() {
 
     prompt_secret "Action1 Sync Client ID"          "freescout-action1-sync-client-id"       "optional"
     prompt_secret "Action1 Sync Client Secret"      "freescout-action1-sync-client-secret"   "optional"
-    prompt_secret "Action1 Run Client ID"           "freescout-action1-run-client-id"        "optional"
-    prompt_secret "Action1 Run Client Secret"       "freescout-action1-run-client-secret"    "optional"
-    prompt_secret "Action1 Manage Client ID"        "freescout-action1-manage-client-id"     "optional"
-    prompt_secret "Action1 Manage Client Secret"    "freescout-action1-manage-client-secret" "optional"
+    prompt_secret "Action1 Automation Runner Client ID"     "freescout-action1-automation-runner-client-id"     "optional"
+    prompt_secret "Action1 Automation Runner Client Secret" "freescout-action1-automation-runner-client-secret" "optional"
+    prompt_secret "Action1 Script Manager Client ID"        "freescout-action1-script-manager-client-id"        "optional"
+    prompt_secret "Action1 Script Manager Client Secret"    "freescout-action1-script-manager-client-secret"    "optional"
 
     # ── Verify readability ────────────────────────────────────────────────────
     log_step "Verifying secrets are readable"
@@ -320,8 +320,8 @@ main() {
                   freescout-google-client-id freescout-google-client-secret \
                   freescout-google-admin-emails freescout-google-allowed-domains \
                   freescout-action1-sync-client-id freescout-action1-sync-client-secret \
-                  freescout-action1-run-client-id freescout-action1-run-client-secret \
-                  freescout-action1-manage-client-id freescout-action1-manage-client-secret; do
+                  freescout-action1-automation-runner-client-id freescout-action1-automation-runner-client-secret \
+                  freescout-action1-script-manager-client-id freescout-action1-script-manager-client-secret; do
         # Only verify optional secrets that were actually created
         if gcloud secrets describe "$secret" --project="$PROJECT_ID" >/dev/null 2>&1; then
             verify_secret "$secret" || true

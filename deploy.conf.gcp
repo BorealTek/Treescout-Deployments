@@ -134,15 +134,15 @@ ACTION1_SYNC_CLIENT_ID_SECRET="freescout-action1-sync-client-id"
 ACTION1_SYNC_CLIENT_SECRET=""
 ACTION1_SYNC_CLIENT_SECRET_SECRET="freescout-action1-sync-client-secret"
 
-ACTION1_RUN_CLIENT_ID=""
-ACTION1_RUN_CLIENT_ID_SECRET="freescout-action1-run-client-id"
-ACTION1_RUN_CLIENT_SECRET=""
-ACTION1_RUN_CLIENT_SECRET_SECRET="freescout-action1-run-client-secret"
+ACTION1_AUTOMATION_RUNNER_CLIENT_ID=""
+ACTION1_AUTOMATION_RUNNER_CLIENT_ID_SECRET="freescout-action1-automation-runner-client-id"
+ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET=""
+ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET_SECRET="freescout-action1-automation-runner-client-secret"
 
-ACTION1_MANAGE_CLIENT_ID=""
-ACTION1_MANAGE_CLIENT_ID_SECRET="freescout-action1-manage-client-id"
-ACTION1_MANAGE_CLIENT_SECRET=""
-ACTION1_MANAGE_CLIENT_SECRET_SECRET="freescout-action1-manage-client-secret"
+ACTION1_SCRIPT_MANAGER_CLIENT_ID=""
+ACTION1_SCRIPT_MANAGER_CLIENT_ID_SECRET="freescout-action1-script-manager-client-id"
+ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
+ACTION1_SCRIPT_MANAGER_CLIENT_SECRET_SECRET="freescout-action1-script-manager-client-secret"
 
 #===============================================================================
 # MODULES
