@@ -243,6 +243,20 @@ main() {
     log_code "    freescout-finance-pass      Finance user password"
     log_code "    freescout-reporter-pass     Reporter user password"
     echo ""
+    log_code "  OPTIONAL (Google OAuth integration)"
+    log_code "    freescout-google-client-id       Google OAuth Client ID"
+    log_code "    freescout-google-client-secret   Google OAuth Client Secret"
+    log_code "    freescout-google-admin-emails    CSV — auto-promoted admin emails"
+    log_code "    freescout-google-allowed-domains CSV — auto-internal user domains"
+    echo ""
+    log_code "  OPTIONAL (Action1 RMM — 3 roles: Sync / Run / Manage)"
+    log_code "    freescout-action1-sync-client-id       Action1 Sync Client ID"
+    log_code "    freescout-action1-sync-client-secret   Action1 Sync Client Secret"
+    log_code "    freescout-action1-run-client-id        Action1 Run Client ID"
+    log_code "    freescout-action1-run-client-secret    Action1 Run Client Secret"
+    log_code "    freescout-action1-manage-client-id     Action1 Manage Client ID"
+    log_code "    freescout-action1-manage-client-secret Action1 Manage Client Secret"
+    echo ""
 
     check_prereqs
 
@@ -265,6 +279,36 @@ main() {
     prompt_secret "Finance user password"  "freescout-finance-pass"  "optional"
     prompt_secret "Reporter user password" "freescout-reporter-pass" "optional"
 
+    # ── Google OAuth integration ─────────────────────────────────────────────
+    log_step "Google OAuth integration (optional)"
+
+    log_info "Required only when the GoogleAdmin module is installed."
+    log_info "GOOGLE_ADMIN_EMAILS   — comma-separated emails auto-promoted to admin."
+    log_info "GOOGLE_ALLOWED_DOMAINS — comma-separated domains for auto-internal provisioning."
+    echo ""
+
+    prompt_secret "Google OAuth Client ID"        "freescout-google-client-id"       "optional"
+    prompt_secret "Google OAuth Client Secret"    "freescout-google-client-secret"   "optional"
+    prompt_secret "Google Admin Emails (CSV)"     "freescout-google-admin-emails"    "optional"
+    prompt_secret "Google Allowed Domains (CSV)"  "freescout-google-allowed-domains" "optional"
+
+    # ── Action1 RMM integration ───────────────────────────────────────────────
+    log_step "Action1 RMM integration (optional — 3 roles)"
+
+    log_info "Requires Action1 API credentials (3 least-privilege roles)."
+    log_info "Create credentials at: https://app.action1.com → Settings → API"
+    log_info "  Sync   = read-only inventory"
+    log_info "  Run    = execute scripts / actions"
+    log_info "  Manage = full administrative control"
+    echo ""
+
+    prompt_secret "Action1 Sync Client ID"          "freescout-action1-sync-client-id"       "optional"
+    prompt_secret "Action1 Sync Client Secret"      "freescout-action1-sync-client-secret"   "optional"
+    prompt_secret "Action1 Run Client ID"           "freescout-action1-run-client-id"        "optional"
+    prompt_secret "Action1 Run Client Secret"       "freescout-action1-run-client-secret"    "optional"
+    prompt_secret "Action1 Manage Client ID"        "freescout-action1-manage-client-id"     "optional"
+    prompt_secret "Action1 Manage Client Secret"    "freescout-action1-manage-client-secret" "optional"
+
     # ── Verify readability ────────────────────────────────────────────────────
     log_step "Verifying secrets are readable"
 
@@ -272,7 +316,12 @@ main() {
     for secret in freescout-repo-token freescout-db-root-pass freescout-db-pass freescout-admin-pass; do
         verify_secret "$secret" || all_ok=false
     done
-    for secret in freescout-agent-pass freescout-finance-pass freescout-reporter-pass; do
+    for secret in freescout-agent-pass freescout-finance-pass freescout-reporter-pass \
+                  freescout-google-client-id freescout-google-client-secret \
+                  freescout-google-admin-emails freescout-google-allowed-domains \
+                  freescout-action1-sync-client-id freescout-action1-sync-client-secret \
+                  freescout-action1-run-client-id freescout-action1-run-client-secret \
+                  freescout-action1-manage-client-id freescout-action1-manage-client-secret; do
         # Only verify optional secrets that were actually created
         if gcloud secrets describe "$secret" --project="$PROJECT_ID" >/dev/null 2>&1; then
             verify_secret "$secret" || true

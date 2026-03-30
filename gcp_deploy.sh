@@ -401,6 +401,20 @@ pull_gcp_secrets() {
     [ -n "${FINANCE_PASS_SECRET:-}" ]  && _pull_one_secret "FINANCE_PASS"  "$FINANCE_PASS_SECRET"
     [ -n "${REPORTER_PASS_SECRET:-}" ] && _pull_one_secret "REPORTER_PASS" "$REPORTER_PASS_SECRET"
 
+    # Google OAuth integration
+    [ -n "${GOOGLE_CLIENT_ID_SECRET:-}" ]             && _pull_one_secret "GOOGLE_CLIENT_ID"             "$GOOGLE_CLIENT_ID_SECRET"
+    [ -n "${GOOGLE_CLIENT_SECRET_SECRET:-}" ]         && _pull_one_secret "GOOGLE_CLIENT_SECRET"         "$GOOGLE_CLIENT_SECRET_SECRET"
+    [ -n "${GOOGLE_ADMIN_EMAILS_SECRET:-}" ]          && _pull_one_secret "GOOGLE_ADMIN_EMAILS"          "$GOOGLE_ADMIN_EMAILS_SECRET"
+    [ -n "${GOOGLE_ALLOWED_DOMAINS_SECRET:-}" ]       && _pull_one_secret "GOOGLE_ALLOWED_DOMAINS"       "$GOOGLE_ALLOWED_DOMAINS_SECRET"
+
+    # Action1 RMM integration
+    [ -n "${ACTION1_SYNC_CLIENT_ID_SECRET:-}" ]           && _pull_one_secret "ACTION1_SYNC_CLIENT_ID"           "$ACTION1_SYNC_CLIENT_ID_SECRET"
+    [ -n "${ACTION1_SYNC_CLIENT_SECRET_SECRET:-}" ]       && _pull_one_secret "ACTION1_SYNC_CLIENT_SECRET"       "$ACTION1_SYNC_CLIENT_SECRET_SECRET"
+    [ -n "${ACTION1_RUN_CLIENT_ID_SECRET:-}" ]            && _pull_one_secret "ACTION1_RUN_CLIENT_ID"            "$ACTION1_RUN_CLIENT_ID_SECRET"
+    [ -n "${ACTION1_RUN_CLIENT_SECRET_SECRET:-}" ]        && _pull_one_secret "ACTION1_RUN_CLIENT_SECRET"        "$ACTION1_RUN_CLIENT_SECRET_SECRET"
+    [ -n "${ACTION1_MANAGE_CLIENT_ID_SECRET:-}" ]         && _pull_one_secret "ACTION1_MANAGE_CLIENT_ID"         "$ACTION1_MANAGE_CLIENT_ID_SECRET"
+    [ -n "${ACTION1_MANAGE_CLIENT_SECRET_SECRET:-}" ]     && _pull_one_secret "ACTION1_MANAGE_CLIENT_SECRET"     "$ACTION1_MANAGE_CLIENT_SECRET_SECRET"
+
     log_success "$secrets_pulled secret(s) pulled from GCP Secret Manager"
 }
 

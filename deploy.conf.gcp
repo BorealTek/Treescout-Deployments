@@ -112,22 +112,37 @@ LETSENCRYPT_EMAIL=""
 
 # Google OAuth — create credentials at https://console.cloud.google.com/credentials
 GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_ID_SECRET="freescout-google-client-id"
+
 GOOGLE_CLIENT_SECRET=""
+GOOGLE_CLIENT_SECRET_SECRET="freescout-google-client-secret"
+
+# Comma-separated emails auto-promoted to admin on first OAuth sign-in
 GOOGLE_ADMIN_EMAILS=""
+GOOGLE_ADMIN_EMAILS_SECRET="freescout-google-admin-emails"
+
+# Comma-separated domains that are auto-provisioned as internal users
 GOOGLE_ALLOWED_DOMAINS=""
+GOOGLE_ALLOWED_DOMAINS_SECRET="freescout-google-allowed-domains"
 
 # Action1 RMM API Keys (3 roles: Sync / Run / Manage — least-privilege)
 # Region: us | eu | ap
 ACTION1_REGION="us"
 
 ACTION1_SYNC_CLIENT_ID=""
+ACTION1_SYNC_CLIENT_ID_SECRET="freescout-action1-sync-client-id"
 ACTION1_SYNC_CLIENT_SECRET=""
+ACTION1_SYNC_CLIENT_SECRET_SECRET="freescout-action1-sync-client-secret"
 
 ACTION1_RUN_CLIENT_ID=""
+ACTION1_RUN_CLIENT_ID_SECRET="freescout-action1-run-client-id"
 ACTION1_RUN_CLIENT_SECRET=""
+ACTION1_RUN_CLIENT_SECRET_SECRET="freescout-action1-run-client-secret"
 
 ACTION1_MANAGE_CLIENT_ID=""
+ACTION1_MANAGE_CLIENT_ID_SECRET="freescout-action1-manage-client-id"
 ACTION1_MANAGE_CLIENT_SECRET=""
+ACTION1_MANAGE_CLIENT_SECRET_SECRET="freescout-action1-manage-client-secret"
 
 #===============================================================================
 # MODULES
