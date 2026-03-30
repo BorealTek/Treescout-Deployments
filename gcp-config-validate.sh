@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #===============================================================================
-# GCP FreeScout Configuration Validator
+# GCP TreeScout Configuration Validator
 #
 # Pre-deployment validation script that checks deploy.conf for common errors
 # before launching gcp_deploy.sh.
@@ -153,7 +153,7 @@ validate_domain() {
         value=$(get_value "$key")
 
         # Check for template value
-        if [[ "$value" =~ ^(example\.com|yourcompany\.com|DOMAIN|freescout\.example\.com|your-domain\.com)$ ]]; then
+        if [[ "$value" =~ ^(example\.com|yourcompany\.com|DOMAIN|treescout\.example\.com|your-domain\.com)$ ]]; then
             log_error "$description still uses template default: $value. Set to actual domain or GCP IP"
             return 1
         fi
@@ -312,7 +312,7 @@ main() {
         AUTO_APPROVE=true
     fi
 
-    log_header "FreeScout GCP Configuration Validator"
+    log_header "TreeScout GCP Configuration Validator"
 
     echo ""
 

@@ -194,7 +194,7 @@ load_config() {
         exit 1
     fi
 
-    if [[ "${DOMAIN_NAME:-}" =~ ^(freescout\.example\.com|example\.com|your-domain\.com)$ ]]; then
+    if [[ "${DOMAIN_NAME:-}" =~ ^(treescout\.example\.com|example\.com|your-domain\.com)$ ]]; then
         log_error "DOMAIN_NAME is still the template placeholder: $DOMAIN_NAME"
         log_info "Set DOMAIN_NAME to your actual domain or GCP external IP in deploy.conf"
         exit 1

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# GCP Secrets Bootstrap for FreeScout / TreeScout
+# GCP Secrets Bootstrap for TreeScout / TreeScout
 #
 # Creates or updates all application secrets in GCP Secret Manager.
 # Run this ONCE before deploying, from any machine with gcloud authenticated.
@@ -225,7 +225,7 @@ main() {
     clear
     echo -e "${CYAN}"
     echo "╔═══════════════════════════════════════════════════════════════╗"
-    echo "║       FreeScout / TreeScout — GCP Secrets Bootstrap          ║"
+    echo "║       TreeScout / TreeScout — GCP Secrets Bootstrap          ║"
     echo "║   Creates or updates all app secrets in Secret Manager       ║"
     echo "╚═══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -233,29 +233,29 @@ main() {
     log_info "Secrets that will be created / updated:"
     echo ""
     log_code "  REQUIRED"
-    log_code "    freescout-repo-token        GitHub PAT for private module repos"
-    log_code "    freescout-db-root-pass      Database root password"
-    log_code "    freescout-db-pass           Database application-user password"
-    log_code "    freescout-admin-pass        Admin user initial password"
+    log_code "    treescout-repo-token        GitHub PAT for private module repos"
+    log_code "    treescout-db-root-pass      Database root password"
+    log_code "    treescout-db-pass           Database application-user password"
+    log_code "    treescout-admin-pass        Admin user initial password"
     echo ""
     log_code "  OPTIONAL (default seeded users)"
-    log_code "    freescout-agent-pass        Agent user password"
-    log_code "    freescout-finance-pass      Finance user password"
-    log_code "    freescout-reporter-pass     Reporter user password"
+    log_code "    treescout-agent-pass        Agent user password"
+    log_code "    treescout-finance-pass      Finance user password"
+    log_code "    treescout-reporter-pass     Reporter user password"
     echo ""
     log_code "  OPTIONAL (Google OAuth integration)"
-    log_code "    freescout-google-client-id       Google OAuth Client ID"
-    log_code "    freescout-google-client-secret   Google OAuth Client Secret"
-    log_code "    freescout-google-admin-emails    CSV — auto-promoted admin emails"
-    log_code "    freescout-google-allowed-domains CSV — auto-internal user domains"
+    log_code "    treescout-google-client-id       Google OAuth Client ID"
+    log_code "    treescout-google-client-secret   Google OAuth Client Secret"
+    log_code "    treescout-google-admin-emails    CSV — auto-promoted admin emails"
+    log_code "    treescout-google-allowed-domains CSV — auto-internal user domains"
     echo ""
     log_code "  OPTIONAL (Action1 RMM — 3 roles: Sync / Run / Manage)"
-    log_code "    freescout-action1-sync-client-id       Action1 Sync Client ID"
-    log_code "    freescout-action1-sync-client-secret   Action1 Sync Client Secret"
-    log_code "    freescout-action1-automation-runner-client-id     Action1 Automation Runner Client ID"
-    log_code "    freescout-action1-automation-runner-client-secret Action1 Automation Runner Client Secret"
-    log_code "    freescout-action1-script-manager-client-id        Action1 Script Manager Client ID"
-    log_code "    freescout-action1-script-manager-client-secret    Action1 Script Manager Client Secret"
+    log_code "    treescout-action1-sync-client-id       Action1 Sync Client ID"
+    log_code "    treescout-action1-sync-client-secret   Action1 Sync Client Secret"
+    log_code "    treescout-action1-automation-runner-client-id     Action1 Automation Runner Client ID"
+    log_code "    treescout-action1-automation-runner-client-secret Action1 Automation Runner Client Secret"
+    log_code "    treescout-action1-script-manager-client-id        Action1 Script Manager Client ID"
+    log_code "    treescout-action1-script-manager-client-secret    Action1 Script Manager Client Secret"
     echo ""
 
     check_prereqs
@@ -263,10 +263,10 @@ main() {
     # ── Required secrets ─────────────────────────────────────────────────────
     log_step "Required secrets"
 
-    prompt_secret "GitHub PAT (scope: repo)" "freescout-repo-token"
-    prompt_secret "Database root password"   "freescout-db-root-pass"
-    prompt_secret "Database app-user password" "freescout-db-pass"
-    prompt_secret "Admin user password"      "freescout-admin-pass"
+    prompt_secret "GitHub PAT (scope: repo)" "treescout-repo-token"
+    prompt_secret "Database root password"   "treescout-db-root-pass"
+    prompt_secret "Database app-user password" "treescout-db-pass"
+    prompt_secret "Admin user password"      "treescout-admin-pass"
 
     # ── Optional secrets ──────────────────────────────────────────────────────
     log_step "Optional secrets (seeded user accounts)"
@@ -275,9 +275,9 @@ main() {
     log_info "Skip any you don't need — those accounts won't be created."
     echo ""
 
-    prompt_secret "Agent user password"    "freescout-agent-pass"    "optional"
-    prompt_secret "Finance user password"  "freescout-finance-pass"  "optional"
-    prompt_secret "Reporter user password" "freescout-reporter-pass" "optional"
+    prompt_secret "Agent user password"    "treescout-agent-pass"    "optional"
+    prompt_secret "Finance user password"  "treescout-finance-pass"  "optional"
+    prompt_secret "Reporter user password" "treescout-reporter-pass" "optional"
 
     # ── Google OAuth integration ─────────────────────────────────────────────
     log_step "Google OAuth integration (optional)"
@@ -287,10 +287,10 @@ main() {
     log_info "GOOGLE_ALLOWED_DOMAINS — comma-separated domains for auto-internal provisioning."
     echo ""
 
-    prompt_secret "Google OAuth Client ID"        "freescout-google-client-id"       "optional"
-    prompt_secret "Google OAuth Client Secret"    "freescout-google-client-secret"   "optional"
-    prompt_secret "Google Admin Emails (CSV)"     "freescout-google-admin-emails"    "optional"
-    prompt_secret "Google Allowed Domains (CSV)"  "freescout-google-allowed-domains" "optional"
+    prompt_secret "Google OAuth Client ID"        "treescout-google-client-id"       "optional"
+    prompt_secret "Google OAuth Client Secret"    "treescout-google-client-secret"   "optional"
+    prompt_secret "Google Admin Emails (CSV)"     "treescout-google-admin-emails"    "optional"
+    prompt_secret "Google Allowed Domains (CSV)"  "treescout-google-allowed-domains" "optional"
 
     # ── Action1 RMM integration ───────────────────────────────────────────────
     log_step "Action1 RMM integration (optional — 3 roles)"
@@ -302,26 +302,26 @@ main() {
     log_info "  Manage = full administrative control"
     echo ""
 
-    prompt_secret "Action1 Sync Client ID"          "freescout-action1-sync-client-id"       "optional"
-    prompt_secret "Action1 Sync Client Secret"      "freescout-action1-sync-client-secret"   "optional"
-    prompt_secret "Action1 Automation Runner Client ID"     "freescout-action1-automation-runner-client-id"     "optional"
-    prompt_secret "Action1 Automation Runner Client Secret" "freescout-action1-automation-runner-client-secret" "optional"
-    prompt_secret "Action1 Script Manager Client ID"        "freescout-action1-script-manager-client-id"        "optional"
-    prompt_secret "Action1 Script Manager Client Secret"    "freescout-action1-script-manager-client-secret"    "optional"
+    prompt_secret "Action1 Sync Client ID"          "treescout-action1-sync-client-id"       "optional"
+    prompt_secret "Action1 Sync Client Secret"      "treescout-action1-sync-client-secret"   "optional"
+    prompt_secret "Action1 Automation Runner Client ID"     "treescout-action1-automation-runner-client-id"     "optional"
+    prompt_secret "Action1 Automation Runner Client Secret" "treescout-action1-automation-runner-client-secret" "optional"
+    prompt_secret "Action1 Script Manager Client ID"        "treescout-action1-script-manager-client-id"        "optional"
+    prompt_secret "Action1 Script Manager Client Secret"    "treescout-action1-script-manager-client-secret"    "optional"
 
     # ── Verify readability ────────────────────────────────────────────────────
     log_step "Verifying secrets are readable"
 
     local all_ok=true
-    for secret in freescout-repo-token freescout-db-root-pass freescout-db-pass freescout-admin-pass; do
+    for secret in treescout-repo-token treescout-db-root-pass treescout-db-pass treescout-admin-pass; do
         verify_secret "$secret" || all_ok=false
     done
-    for secret in freescout-agent-pass freescout-finance-pass freescout-reporter-pass \
-                  freescout-google-client-id freescout-google-client-secret \
-                  freescout-google-admin-emails freescout-google-allowed-domains \
-                  freescout-action1-sync-client-id freescout-action1-sync-client-secret \
-                  freescout-action1-automation-runner-client-id freescout-action1-automation-runner-client-secret \
-                  freescout-action1-script-manager-client-id freescout-action1-script-manager-client-secret; do
+    for secret in treescout-agent-pass treescout-finance-pass treescout-reporter-pass \
+                  treescout-google-client-id treescout-google-client-secret \
+                  treescout-google-admin-emails treescout-google-allowed-domains \
+                  treescout-action1-sync-client-id treescout-action1-sync-client-secret \
+                  treescout-action1-automation-runner-client-id treescout-action1-automation-runner-client-secret \
+                  treescout-action1-script-manager-client-id treescout-action1-script-manager-client-secret; do
         # Only verify optional secrets that were actually created
         if gcloud secrets describe "$secret" --project="$PROJECT_ID" >/dev/null 2>&1; then
             verify_secret "$secret" || true

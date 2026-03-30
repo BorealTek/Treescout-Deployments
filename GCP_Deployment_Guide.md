@@ -97,15 +97,13 @@ gcloud compute instances create freescout-prod \
 Verify it has an external IP:
 
 ```bash
-gcloud compute instances describe freescout-prod \
-  --zone=us-central1-a \
-  --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
+gcloud compute instances describe treescout-prod  --zone=us-central1-a   --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
 ```
 
 Pre-deploy checklist:
-- [ ] Instance created and running
-- [ ] Can SSH: `gcloud compute ssh freescout-prod --zone=us-central1-a`
-- [ ] Disk: 50 GB minimum
+- [x] Instance created and running
+- [x] Can SSH: `gcloud compute ssh freescout-prod --zone=us-central1-a`
+- [x] Disk: 50 GB minimum
 
 ---
 

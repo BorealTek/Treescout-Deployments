@@ -1,5 +1,5 @@
 #===============================================================================
-# FreeScout GCP Deployment Configuration
+# TreeScout GCP Deployment Configuration
 #
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │  FIRST-TIME SETUP                                                       │
@@ -26,7 +26,7 @@ USE_GCP_SECRET_MANAGER="true"
 #===============================================================================
 GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
 GIT_BRANCH="laravel-11-foundation"
-DEFAULT_INSTALL_DIR="/opt/freescout-docker"
+DEFAULT_INSTALL_DIR="/opt/treescout-docker"
 GCP_PROJECT_ID=""       # Auto-detected from instance metadata when blank
 GCP_ZONE="us-central1-a"
 
@@ -34,11 +34,11 @@ GCP_ZONE="us-central1-a"
 # NETWORK
 #===============================================================================
 # Domain name or GCP external IP (e.g. 34.0.0.1.nip.io for testing)
-DOMAIN_NAME="freescout.example.com"       # ← REQUIRED: change before deploying
+DOMAIN_NAME="treescout.example.com"       # ← REQUIRED: change before deploying
 
 # Expose application via GCP Firewall rules (set false for internal-only)
 EXPOSE_PUBLIC_PORTS="true"
-GCP_FIREWALL_RULE_NAME="allow-freescout-https"
+GCP_FIREWALL_RULE_NAME="allow-treescout-https"
 
 # Allowed source CIDRs  — must be set explicitly (no default to force a decision)
 # Examples:  "203.0.113.0/24"  |  "10.0.0.0/8"  |  "0.0.0.0/0" (public, use with care)
@@ -51,17 +51,17 @@ DOCKER_SUBNET="172.20.0.0/16"
 #===============================================================================
 # Use "db" for the embedded Docker container; set to Cloud SQL private IP for prod.
 DB_HOST="db"
-DB_USER="freescout"
-DB_NAME="freescout"
+DB_USER="treescout"
+DB_NAME="treescout"
 
 # Database root password
 # Leave blank when USE_GCP_SECRET_MANAGER=true — pulled from Secret Manager.
 DB_ROOT_PASS=""
-DB_ROOT_PASS_SECRET="freescout-db-root-pass"
+DB_ROOT_PASS_SECRET="treescout-db-root-pass"
 
 # Database application-user password
 DB_PASS=""
-DB_PASS_SECRET="freescout-db-pass"
+DB_PASS_SECRET="treescout-db-pass"
 
 #===============================================================================
 # APPLICATION USERS  (seeded on first install)
@@ -72,28 +72,28 @@ ADMIN_EMAIL="admin@example.com"           # ← REQUIRED: change before deployin
 ADMIN_FIRST_NAME="System"
 ADMIN_LAST_NAME="Administrator"
 ADMIN_PASS=""
-ADMIN_PASS_SECRET="freescout-admin-pass"
+ADMIN_PASS_SECRET="treescout-admin-pass"
 
 # 2. Agent — standard support access
 AGENT_EMAIL="agent@example.com"
 AGENT_FIRST_NAME="Support"
 AGENT_LAST_NAME="Agent"
 AGENT_PASS=""
-AGENT_PASS_SECRET="freescout-agent-pass"
+AGENT_PASS_SECRET="treescout-agent-pass"
 
 # 3. Finance — billing & invoice access
 FINANCE_EMAIL="finance@example.com"
 FINANCE_FIRST_NAME="Finance"
 FINANCE_LAST_NAME="Manager"
 FINANCE_PASS=""
-FINANCE_PASS_SECRET="freescout-finance-pass"
+FINANCE_PASS_SECRET="treescout-finance-pass"
 
 # 4. Reporter — read-only access
 REPORTER_EMAIL="reporter@example.com"
 REPORTER_FIRST_NAME="Report"
 REPORTER_LAST_NAME="Viewer"
 REPORTER_PASS=""
-REPORTER_PASS_SECRET="freescout-reporter-pass"
+REPORTER_PASS_SECRET="treescout-reporter-pass"
 
 #===============================================================================
 # SSL / TLS
@@ -101,7 +101,7 @@ REPORTER_PASS_SECRET="freescout-reporter-pass"
 # "false" = self-signed cert (generated at deploy time — browsers will warn)
 # "true"  = GCP Managed Certificate (requires Cloud Load Balancer + public domain)
 USE_MANAGED_SSL="false"
-# GCP_SSL_CERTIFICATE_NAME="freescout-ssl-cert"
+# GCP_SSL_CERTIFICATE_NAME="treescout-ssl-cert"
 
 # Let's Encrypt email (only used when running certbot inside the app container)
 LETSENCRYPT_EMAIL=""
@@ -112,37 +112,37 @@ LETSENCRYPT_EMAIL=""
 
 # Google OAuth — create credentials at https://console.cloud.google.com/credentials
 GOOGLE_CLIENT_ID=""
-GOOGLE_CLIENT_ID_SECRET="freescout-google-client-id"
+GOOGLE_CLIENT_ID_SECRET="treescout-google-client-id"
 
 GOOGLE_CLIENT_SECRET=""
-GOOGLE_CLIENT_SECRET_SECRET="freescout-google-client-secret"
+GOOGLE_CLIENT_SECRET_SECRET="treescout-google-client-secret"
 
 # Comma-separated emails auto-promoted to admin on first OAuth sign-in
 GOOGLE_ADMIN_EMAILS=""
-GOOGLE_ADMIN_EMAILS_SECRET="freescout-google-admin-emails"
+GOOGLE_ADMIN_EMAILS_SECRET="treescout-google-admin-emails"
 
 # Comma-separated domains that are auto-provisioned as internal users
 GOOGLE_ALLOWED_DOMAINS=""
-GOOGLE_ALLOWED_DOMAINS_SECRET="freescout-google-allowed-domains"
+GOOGLE_ALLOWED_DOMAINS_SECRET="treescout-google-allowed-domains"
 
 # Action1 RMM API Keys (3 roles: Sync / Run / Manage — least-privilege)
 # Region: us | eu | ap
 ACTION1_REGION="us"
 
 ACTION1_SYNC_CLIENT_ID=""
-ACTION1_SYNC_CLIENT_ID_SECRET="freescout-action1-sync-client-id"
+ACTION1_SYNC_CLIENT_ID_SECRET="treescout-action1-sync-client-id"
 ACTION1_SYNC_CLIENT_SECRET=""
-ACTION1_SYNC_CLIENT_SECRET_SECRET="freescout-action1-sync-client-secret"
+ACTION1_SYNC_CLIENT_SECRET_SECRET="treescout-action1-sync-client-secret"
 
 ACTION1_AUTOMATION_RUNNER_CLIENT_ID=""
-ACTION1_AUTOMATION_RUNNER_CLIENT_ID_SECRET="freescout-action1-automation-runner-client-id"
+ACTION1_AUTOMATION_RUNNER_CLIENT_ID_SECRET="treescout-action1-automation-runner-client-id"
 ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET=""
-ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET_SECRET="freescout-action1-automation-runner-client-secret"
+ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET_SECRET="treescout-action1-automation-runner-client-secret"
 
 ACTION1_SCRIPT_MANAGER_CLIENT_ID=""
-ACTION1_SCRIPT_MANAGER_CLIENT_ID_SECRET="freescout-action1-script-manager-client-id"
+ACTION1_SCRIPT_MANAGER_CLIENT_ID_SECRET="treescout-action1-script-manager-client-id"
 ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
-ACTION1_SCRIPT_MANAGER_CLIENT_SECRET_SECRET="freescout-action1-script-manager-client-secret"
+ACTION1_SCRIPT_MANAGER_CLIENT_SECRET_SECRET="treescout-action1-script-manager-client-secret"
 
 #===============================================================================
 # KROKI — Standalone Diagram Renderer (optional)
@@ -161,7 +161,7 @@ MIDDLEMAN_KROKI_TIMEOUT="10"
 # Leave blank when USE_GCP_SECRET_MANAGER=true (pulled from Secret Manager).
 # Do NOT commit a real token here.
 export REPO_TOKEN=""
-REPO_TOKEN_SECRET="freescout-repo-token"
+REPO_TOKEN_SECRET="treescout-repo-token"
 
 # Modules to install.  Format: "Name|RepoURL|REPO_TOKEN|Branch"
 # See deployment/modules.manifest.json for all available modules and profiles.
@@ -221,7 +221,7 @@ ENABLE_GCP_MONITORING="true"
 # Requires: gsutil authenticated (or Workload Identity).
 # ⚠ Set to "true" before going live — never run production without backups.
 ENABLE_GCP_BACKUPS="false"
-GCP_BACKUP_BUCKET=""        # Format: gs://my-bucket/freescout/
+GCP_BACKUP_BUCKET=""        # Format: gs://my-bucket/treescout/
 BACKUP_SCHEDULE="0 2 * * *" # Cron format — default: 02:00 UTC daily
 
 #===============================================================================

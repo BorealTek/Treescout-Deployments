@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #===============================================================================
-# FreeScout Docker Deployer (Ubuntu/Linux)
+# TreeScout Docker Deployer (Ubuntu/Linux)
 #
 # Enterprise-grade deployment script with:
 # - Bash strict mode (set -euo pipefail)
@@ -23,7 +23,7 @@ readonly SCRIPT_VERSION="2.0.0"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO="https://github.com/Scotchmcdonald/freescout.git"
 DEFAULT_BRANCH="laravel-11-foundation"
-DEFAULT_INSTALL_DIR="/opt/freescout-docker"
+DEFAULT_INSTALL_DIR="/opt/treescout-docker"
 readonly CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
 
 # Boreal Theme Colors
@@ -55,7 +55,7 @@ CLEANUP_NEEDED=false
 
 # Default Modules — FULL install (BorealTek internal deployment)
 #
-# IMPORTANT: The core app repo (Scotchmcdonald/freescout) is PUBLIC.
+# IMPORTANT: The core app repo (Scotchmcdonald/treescout) is PUBLIC.
 #            ALL BorealTek module repos below are PRIVATE.
 #            REPO_TOKEN must be set to a GitHub PAT with repo scope before deploy.
 #
@@ -337,14 +337,14 @@ save_current_config() {
 
     cat > "$CONFIG_FILE" <<EOF
 #===============================================================================
-# FreeScout Deployment Configuration
+# TreeScout Deployment Configuration
 # Generated on $(date)
 #===============================================================================
 
 # Installation Settings
 GIT_REPO_URL="${GIT_REPO_URL:-$DEFAULT_REPO}"
 GIT_BRANCH="${GIT_BRANCH:-$DEFAULT_BRANCH}"
-DEFAULT_INSTALL_DIR="${DEFAULT_INSTALL_DIR:-/opt/freescout-docker}"
+DEFAULT_INSTALL_DIR="${DEFAULT_INSTALL_DIR:-/opt/treescout-docker}"
 
 # Network Settings
 DOMAIN_NAME="${DOMAIN_NAME:-}"
@@ -352,9 +352,9 @@ DOCKER_SUBNET="${DOCKER_SUBNET:-}"
 
 # Database Settings
 DB_ROOT_PASS="${DB_ROOT_PASS:-}"
-DB_USER="${DB_USER:-freescout}"
+DB_USER="${DB_USER:-treescout}"
 DB_PASS="${DB_PASS:-}"
-DB_NAME="${DB_NAME:-freescout}"
+DB_NAME="${DB_NAME:-treescout}"
 
 # Admin User
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
@@ -877,7 +877,7 @@ generate_ssl_certificates() {
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout nginx/ssl/key.pem \
         -out nginx/ssl/cert.pem \
-        -subj "/C=US/ST=State/L=City/O=FreeScout/CN=${DOMAIN_NAME}" \
+        -subj "/C=US/ST=State/L=City/O=TreeScout/CN=${DOMAIN_NAME}" \
         2>&1 | grep -v "writing new private key" || true
 
     # Verify certificates
@@ -934,7 +934,7 @@ services:
       context: .
       args:
         DOCKER_GID: ${DOCKER_GID}
-    image: freescout-app
+    image: treescout-app
     restart: unless-stopped
     ports:
       - "127.0.0.1:8443:8080"  # HTTPS on standard port
@@ -1004,7 +1004,7 @@ services:
       retries: 5
 
   queue:
-    image: freescout-app
+    image: treescout-app
     restart: always
     command: php artisan queue:work --queue=emails,default,long-running --sleep=3 --tries=3 --max-time=3600
     environment:
@@ -1020,7 +1020,7 @@ services:
       - fs-net
 
   cron:
-    image: freescout-app
+    image: treescout-app
     restart: unless-stopped
     command: >
       /bin/sh -c '
@@ -1038,7 +1038,7 @@ services:
       - fs-net
 
   reverb:
-    image: freescout-app
+    image: treescout-app
     restart: unless-stopped
     command: >
       sh -c '
@@ -1061,7 +1061,7 @@ services:
       - fs-net
 
   reverb:
-    image: freescout-app
+    image: treescout-app
     restart: unless-stopped
     command: >
       sh -c '
@@ -1104,7 +1104,7 @@ generate_update_script() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "🔄 Updating FreeScout (${GIT_BRANCH})..."
+echo "🔄 Updating TreeScout (${GIT_BRANCH})..."
 
 cd src
 git fetch origin
@@ -1126,7 +1126,7 @@ sudo docker compose exec -T app npm run build
 
 echo "🧹 Clearing caches..."
 sudo docker compose exec -T app php artisan optimize:clear
-sudo docker compose exec -T app php artisan freescout:clear-cache
+sudo docker compose exec -T app php artisan treescout:clear-cache
 
 echo "✅ Update complete!"
 EOF
@@ -1492,8 +1492,8 @@ finalize_installation() {
         log_info "Running migrations on existing database..."
         sudo docker compose exec -T app php artisan migrate --force
     else
-        log_info "Installing FreeScout..."
-        sudo docker compose exec -T app php artisan freescout:install \
+        log_info "Installing TreeScout..."
+        sudo docker compose exec -T app php artisan treescout:install \
             --force \
             --email="$ADMIN_EMAIL" \
             --password="$ADMIN_PASS" \
@@ -1612,10 +1612,10 @@ main() {
 
     # Set defaults for credentials
     DB_ROOT_PASS="${DB_ROOT_PASS:-$(openssl rand -hex 16)}"
-    DB_USER="${DB_USER:-freescout}"
+    DB_USER="${DB_USER:-treescout}"
     DB_PASS="${DB_PASS:-$(openssl rand -hex 16)}"
-    DB_NAME="${DB_NAME:-freescout}"
-    ADMIN_EMAIL="${ADMIN_EMAIL:-admin@freescout.local}"
+    DB_NAME="${DB_NAME:-treescout}"
+    ADMIN_EMAIL="${ADMIN_EMAIL:-admin@treescout.local}"
     ADMIN_PASS="${ADMIN_PASS:-$(openssl rand -hex 12)}"
 
     check_existing_installation
