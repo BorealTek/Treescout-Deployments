@@ -56,7 +56,9 @@ readonly COLOR_DIM=$GREY
 
 # GCP Metadata Service endpoints
 readonly GCP_METADATA_URL="http://metadata.google.internal/computeMetadata/v1"
-readonly GCP_METADATA_HEADERS="-H Metadata-Flavor:Google"
+
+# Wrapper: always sends the required Metadata-Flavor header.
+meta_curl() { curl -s -H "Metadata-Flavor: Google" "$@"; }
 
 # State variables
 GCP_PROJECT_ID=""
@@ -123,7 +125,7 @@ detect_gcp_environment() {
     log_step "Detecting GCP Environment"
 
     # Check if running on GCP by querying metadata service
-    if curl -s -m 1 "${GCP_METADATA_URL}/project/project-id" $GCP_METADATA_HEADERS >/dev/null 2>&1; then
+    if meta_curl -m 1 "${GCP_METADATA_URL}/project/project-id" >/dev/null 2>&1; then
         GCP_IS_RUNNING_IN_GCP=true
         log_success "Running on Google Cloud Platform"
     else
@@ -135,13 +137,13 @@ detect_gcp_environment() {
     # Fetch GCP instance metadata
     log_info "Fetching GCP instance metadata..."
 
-    GCP_PROJECT_ID=$(curl -s "${GCP_METADATA_URL}/project/project-id" $GCP_METADATA_HEADERS)
-    GCP_INSTANCE_NAME=$(curl -s "${GCP_METADATA_URL}/instance/name" $GCP_METADATA_HEADERS)
-    GCP_INSTANCE_ZONE=$(curl -s "${GCP_METADATA_URL}/instance/zone" $GCP_METADATA_HEADERS | awk -F'/' '{print $NF}')
-    GCP_INSTANCE_NETWORK=$(curl -s "${GCP_METADATA_URL}/instance/network-interfaces/0/network" $GCP_METADATA_HEADERS | awk -F'/' '{print $NF}')
-    GCP_INSTANCE_SUBNET=$(curl -s "${GCP_METADATA_URL}/instance/network-interfaces/0/subnetwork" $GCP_METADATA_HEADERS | awk -F'/' '{print $NF}')
-    GCP_INSTANCE_IP_INTERNAL=$(curl -s "${GCP_METADATA_URL}/instance/network-interfaces/0/ip" $GCP_METADATA_HEADERS)
-    GCP_INSTANCE_IP_EXTERNAL=$(curl -s "${GCP_METADATA_URL}/instance/network-interfaces/0/external-ip" $GCP_METADATA_HEADERS 2>/dev/null || echo "NO_EXTERNAL_IP")
+    GCP_PROJECT_ID=$(meta_curl "${GCP_METADATA_URL}/project/project-id")
+    GCP_INSTANCE_NAME=$(meta_curl "${GCP_METADATA_URL}/instance/name")
+    GCP_INSTANCE_ZONE=$(meta_curl "${GCP_METADATA_URL}/instance/zone" | awk -F'/' '{print $NF}')
+    GCP_INSTANCE_NETWORK=$(meta_curl "${GCP_METADATA_URL}/instance/network-interfaces/0/network" | awk -F'/' '{print $NF}')
+    GCP_INSTANCE_SUBNET=$(meta_curl "${GCP_METADATA_URL}/instance/network-interfaces/0/subnetwork" | awk -F'/' '{print $NF}')
+    GCP_INSTANCE_IP_INTERNAL=$(meta_curl "${GCP_METADATA_URL}/instance/network-interfaces/0/ip")
+    GCP_INSTANCE_IP_EXTERNAL=$(meta_curl "${GCP_METADATA_URL}/instance/network-interfaces/0/external-ip" 2>/dev/null || echo "NO_EXTERNAL_IP")
 
     # Display detected metadata
     log_success "GCP Metadata Detected:"
@@ -180,7 +182,7 @@ load_config() {
     # Override GCP variables if detected
     if [ "$GCP_IS_RUNNING_IN_GCP" = true ]; then
         if [ -z "${GCP_PROJECT_ID:-}" ]; then
-            GCP_PROJECT_ID=$(curl -s "${GCP_METADATA_URL}/project/project-id" $GCP_METADATA_HEADERS)
+            GCP_PROJECT_ID=$(meta_curl "${GCP_METADATA_URL}/project/project-id")
         fi
         if [ -z "${GCP_ZONE:-}" ]; then
             GCP_ZONE=$GCP_INSTANCE_ZONE
