@@ -267,8 +267,10 @@ check_prereqs() {
         else
             projects_list=$(gcloud projects list --limit=20 --format="value(projectId)" 2>/dev/null || true)
         fi
-        local project_count
-        project_count=$(echo "$projects_list" | grep -c . 2>/dev/null || echo 0)
+        local project_count=0
+        if [ -n "$projects_list" ]; then
+            project_count=$(echo "$projects_list" | wc -l | tr -d ' ')
+        fi
 
         if [ "$project_count" -gt 0 ]; then
             echo ""
