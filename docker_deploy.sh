@@ -1223,19 +1223,19 @@ ADMIN_PASSWORD="${ADMIN_PASS}"
 ADMIN_FIRST_NAME="${ADMIN_FIRST_NAME:-System}"
 ADMIN_LAST_NAME="${ADMIN_LAST_NAME:-Administrator}"
 
-# Agent User
+# Scaffold users (agent / finance / reporter)
+# Only seeded when AGENT_PASS (or AGENT_EMAIL) is explicitly configured.
+SEED_SCAFFOLD_USERS=$([ -n "${AGENT_PASS:-}${AGENT_EMAIL:-}" ] && echo true || echo false)
 AGENT_EMAIL="${AGENT_EMAIL:-agent@example.com}"
 AGENT_PASSWORD="${AGENT_PASS:-agent123456789}"
 AGENT_FIRST_NAME="${AGENT_FIRST_NAME:-Support}"
 AGENT_LAST_NAME="${AGENT_LAST_NAME:-Agent}"
 
-# Finance User
 FINANCE_EMAIL="${FINANCE_EMAIL:-finance@example.com}"
 FINANCE_PASSWORD="${FINANCE_PASS:-finance123456789}"
 FINANCE_FIRST_NAME="${FINANCE_FIRST_NAME:-Finance}"
 FINANCE_LAST_NAME="${FINANCE_LAST_NAME:-Manager}"
 
-# Reporter User
 REPORTER_EMAIL="${REPORTER_EMAIL:-reporter@example.com}"
 REPORTER_PASSWORD="${REPORTER_PASS:-reporter123456789}"
 REPORTER_FIRST_NAME="${REPORTER_FIRST_NAME:-Report}"
@@ -1348,15 +1348,14 @@ install_modules() {
 
         if [ -d "$target_dir" ]; then
             log_info "Module $name already exists. Updating..."
-            cd "$target_dir"
-            git fetch origin
+            git -C "$target_dir" fetch origin
             if [ -n "$branch" ]; then
-                git checkout "$branch" || git checkout -b "$branch" "origin/$branch"
-                git pull origin "$branch"
+                git -C "$target_dir" checkout "$branch" 2>/dev/null || \
+                    git -C "$target_dir" checkout -b "$branch" "origin/$branch"
+                git -C "$target_dir" pull origin "$branch"
             else
-                git pull
+                git -C "$target_dir" pull
             fi
-            cd - >/dev/null
             continue
         fi
 
