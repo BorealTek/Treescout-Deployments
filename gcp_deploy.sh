@@ -385,12 +385,18 @@ pull_gcp_secrets() {
         local var_name=$1
         local secret_name=$2
         local value
-        if value=$(gcloud secrets versions access latest --secret="$secret_name" --project="${GCP_PROJECT_ID}" 2>/dev/null); then
+        local gcloud_err
+        if value=$(gcloud secrets versions access latest --secret="$secret_name" --project="${GCP_PROJECT_ID}" 2>/tmp/_gcloud_secret_err); then
             export "$var_name=$value"
             log_success "Pulled $var_name from Secret Manager secret: $secret_name"
             (( secrets_pulled++ )) || true
         else
-            log_warning "Could not pull secret '$secret_name' — falling back to deploy.conf value"
+            gcloud_err=$(cat /tmp/_gcloud_secret_err 2>/dev/null | head -3)
+            log_warning "Could not pull secret '$secret_name' (project: ${GCP_PROJECT_ID})"
+            if [ -n "$gcloud_err" ]; then
+                log_warning "  Reason: $gcloud_err"
+            fi
+            log_info "  Falling back to deploy.conf value for ${var_name}"
         fi
     }
 
