@@ -399,6 +399,29 @@ pull_gcp_secrets() {
         exit 1
     fi
 
+    # Fetch the access token directly from the metadata server and pass it to
+    # gcloud via CLOUDSDK_AUTH_ACCESS_TOKEN.  This bypasses any locally-configured
+    # gcloud account (core/account) or key-file credentials so the VM's OAuth
+    # scopes (set with --scopes=cloud-platform) are always honoured.
+    if [ "$GCP_IS_RUNNING_IN_GCP" = true ]; then
+        local _meta_tok
+        if _meta_tok=$(meta_curl -m 5 \
+                "${GCP_METADATA_URL}/instance/service-accounts/default/token" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null) \
+            && [ -n "${_meta_tok:-}" ]; then
+            export CLOUDSDK_AUTH_ACCESS_TOKEN="$_meta_tok"
+            unset GOOGLE_APPLICATION_CREDENTIALS   # prevent key-file override
+            log_info "Authenticating via VM metadata service account token"
+        else
+            log_warning "Could not fetch metadata token — gcloud will use its locally configured credentials"
+            log_info "If secrets fail, verify VM access scopes:"
+            log_code "  curl -s -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/scopes"
+            log_info "And check gcloud config (run as root):"
+            log_code "  sudo gcloud config list | grep account"
+            log_info "If core/account is set, clear it:  sudo gcloud config unset core/account"
+        fi
+    fi
+
     local secrets_pulled=0
 
     _pull_one_secret() {

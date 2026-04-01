@@ -513,17 +513,32 @@ gcloud secrets versions access latest --secret="freescout-repo-token"
 # If permission denied → re-run gcp-secrets-bootstrap.sh (IAM step) from workstation
 ```
 
-**"insufficient authentication scopes"** — the VM was created without `--scopes=cloud-platform`. Fix:
+**"insufficient authentication scopes"** — two layered causes:
 
+**Layer 1 — VM access scope** (set at instance level):
+The VM was created without `--scopes=cloud-platform`. Fix from your workstation:
 ```bash
-# Run from your workstation (not the VM) — takes ~2 min downtime
 gcloud compute instances stop   treescout-prod --zone=us-central1-a
 gcloud compute instances set-service-account treescout-prod \
   --zone=us-central1-a --scopes=cloud-platform
 gcloud compute instances start  treescout-prod --zone=us-central1-a
 ```
 
-The [`gcp-secrets-bootstrap.sh`](gcp-secrets-bootstrap.sh) script will also offer to do this for you interactively.
+**Layer 2 — gcloud `core/account` config** (even after correct VM scopes are set):
+If gcloud on the VM has `core/account` in its config, it uses a locally-cached credential rather than fetching a fresh token from the metadata server. Diagnose and fix on the VM:
+```bash
+# Check
+sudo gcloud config list | grep account
+sudo curl -s -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/scopes"
+
+# Fix: clear the explicit account so gcloud falls back to the metadata server
+sudo gcloud config unset core/account
+```
+
+`gcp_deploy.sh` now also works around this automatically by fetching the metadata token directly and injecting it via `CLOUDSDK_AUTH_ACCESS_TOKEN` before calling gcloud.
+
+The [`gcp-secrets-bootstrap.sh`](gcp-secrets-bootstrap.sh) script will also offer to update VM scopes interactively.
 
 ### Database connection failed
 
