@@ -346,7 +346,12 @@ main() {
     echo -e "${YELLOW}3. Validating IMPORTANT settings...${NC}"
     validate_required "DB_USER" "Database User"
     validate_required "DB_NAME" "Database Name"
-    validate_email "AGENT_EMAIL" "Agent Email"
+    # Scaffold users are optional — only validate if the key is present in config
+    if validate_key "AGENT_EMAIL" >/dev/null 2>&1; then
+        validate_email "AGENT_EMAIL" "Agent Email"
+    else
+        log_note "Agent user not configured (commented out — skipped)"
+    fi
     echo ""
 
     # GCP-specific fields
