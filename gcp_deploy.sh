@@ -201,19 +201,11 @@ load_config() {
     fi
 
     if [ "${ALLOWED_SOURCE_RANGES:-}" = "0.0.0.0/0" ]; then
-        log_warning "ALLOWED_SOURCE_RANGES is 0.0.0.0/0 — the application will be open to the entire internet"
-        log_info "For production, restrict to known CIDRs in deploy.conf (ALLOWED_SOURCE_RANGES)"
-        if [ "$AUTO_APPROVE" = true ]; then
-            log_info "Unrestricted access auto-approved (--yes / CI mode)"
-        else
-            read -p "Continue with unrestricted access? (y/n) " -n 1 -r; echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                log_warning "Deployment cancelled — update ALLOWED_SOURCE_RANGES and retry"
-                exit 0
-            fi
-        fi
+        log_info "ALLOWED_SOURCE_RANGES=0.0.0.0/0 — public access (ports 443/80 open to all IPs)"
+        log_info "This is correct for a public-facing application."
+        log_info "To restrict access (VPN/office-only), set specific CIDRs in deploy.conf instead."
     elif [ -z "${ALLOWED_SOURCE_RANGES:-}" ]; then
-        log_error "ALLOWED_SOURCE_RANGES is empty — set to a CIDR range or 0.0.0.0/0 to allow all"
+        log_error "ALLOWED_SOURCE_RANGES is empty — set to 0.0.0.0/0 for public access or a specific CIDR to restrict"
         exit 1
     fi
 
@@ -381,13 +373,19 @@ pull_gcp_secrets() {
         exit 1
     fi
 
+    if [ -z "${GCP_PROJECT_ID:-}" ]; then
+        log_error "GCP_PROJECT_ID is not set — cannot pull secrets from Secret Manager"
+        log_info "Ensure the instance metadata server is reachable, or set GCP_PROJECT_ID in deploy.conf"
+        exit 1
+    fi
+
     local secrets_pulled=0
 
     _pull_one_secret() {
         local var_name=$1
         local secret_name=$2
         local value
-        if value=$(gcloud secrets versions access latest --secret="$secret_name" 2>/dev/null); then
+        if value=$(gcloud secrets versions access latest --secret="$secret_name" --project="${GCP_PROJECT_ID}" 2>/dev/null); then
             export "$var_name=$value"
             log_success "Pulled $var_name from Secret Manager secret: $secret_name"
             (( secrets_pulled++ )) || true

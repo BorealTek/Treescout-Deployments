@@ -184,7 +184,8 @@ gcloud compute ssh freescout-prod --zone=us-central1-a
 Clone and configure on the VM:
 
 ```bash
-git clone https://github.com/BorealTek/Treescout-Deployments.git /opt/treescout-deploy
+mkdir -p /opt/treescout-deploy
+git clone https://github.com/BorealTek/Treescout-Deployments.git /opt/treescout-deploy/deployment
 cd /opt/treescout-deploy
 
 cp deployment/deploy.conf.gcp deploy.conf
@@ -195,9 +196,12 @@ nano deploy.conf
 **Only two values are required** — everything else is pulled from Secret Manager:
 
 ```bash
-DOMAIN_NAME="your-domain.com"          # Your actual domain or GCP external IP
-ALLOWED_SOURCE_RANGES="203.0.113.5/32" # Your IP(s) — or 0.0.0.0/0 for public access
+DOMAIN_NAME="your-domain.com"   # Your actual domain or GCP external IP
+ALLOWED_SOURCE_RANGES="0.0.0.0/0"  # Public app: allow all IPs (ports 443/80)
+                                    # Internal/VPN-only: restrict to CIDRs e.g. "203.0.113.0/24,10.0.0.0/8"
 ```
+
+> **Public vs. restricted access:** `ALLOWED_SOURCE_RANGES` controls the GCP firewall rule for ports 443 and 80 only. For a customer-facing application, `0.0.0.0/0` is the correct setting — you cannot know all client IPs ahead of time. Use a restricted CIDR only for internal tools accessed over a VPN or from a known office network.
 
 Non-secret values you may want to review:
 
