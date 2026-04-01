@@ -143,7 +143,7 @@ detect_gcp_environment() {
     GCP_INSTANCE_NETWORK=$(meta_curl "${GCP_METADATA_URL}/instance/network-interfaces/0/network" | awk -F'/' '{print $NF}')
     GCP_INSTANCE_SUBNET=$(meta_curl "${GCP_METADATA_URL}/instance/network-interfaces/0/subnetwork" | awk -F'/' '{print $NF}')
     GCP_INSTANCE_IP_INTERNAL=$(meta_curl "${GCP_METADATA_URL}/instance/network-interfaces/0/ip")
-    GCP_INSTANCE_IP_EXTERNAL=$(meta_curl "${GCP_METADATA_URL}/instance/network-interfaces/0/external-ip" 2>/dev/null || echo "NO_EXTERNAL_IP")
+    GCP_INSTANCE_IP_EXTERNAL=$(meta_curl -m 3 "${GCP_METADATA_URL}/instance/network-interfaces/0/access-configs/0/external-ip" 2>/dev/null || echo "NO_EXTERNAL_IP")
 
     # Display detected metadata
     log_success "GCP Metadata Detected:"
@@ -276,7 +276,17 @@ create_firewall_rules() {
         log_code "gcloud compute instances add-tags ${GCP_INSTANCE_NAME} \\"
         log_code "  --tags=treescout --zone=${GCP_ZONE}"
     else
-        log_warning "Failed to create firewall rule — you may need to do this manually"
+        log_warning "Failed to create firewall rule — the VM service account lacks compute.firewalls.create."
+        log_info  "Run this ONCE from your workstation, then re-run the deploy:"
+        log_code  "  gcloud compute firewall-rules create ${GCP_FIREWALL_RULE_NAME} \\"
+        log_code  "    --project=${GCP_PROJECT_ID:-<project>} \\"
+        log_code  "    --allow=tcp:443,tcp:80 \\"
+        log_code  "    --source-ranges=${ALLOWED_SOURCE_RANGES:-0.0.0.0/0} \\"
+        log_code  "    --target-tags=treescout \\"
+        log_code  "    --description='TreeScout HTTPS/HTTP access'"
+        log_info  "And add the network tag to the instance:"
+        log_code  "  gcloud compute instances add-tags ${GCP_INSTANCE_NAME:-<instance>} \\"
+        log_code  "    --tags=treescout --zone=${GCP_ZONE:-us-central1-a}"
     fi
 }
 
@@ -301,7 +311,10 @@ apply_firewall_tags() {
         --project="${GCP_PROJECT_ID:-}" 2>/dev/null; then
         log_success "Network tag applied"
     else
-        log_warning "Failed to apply network tag — may already exist or insufficient permissions"
+        log_warning "Failed to apply network tag (insufficient permissions or already set)."
+        log_info  "Verify / apply from your workstation:"
+        log_code  "  gcloud compute instances describe ${GCP_INSTANCE_NAME:-<instance>} --zone=${GCP_ZONE:-us-central1-a} --format='get(tags)'"
+        log_code  "  gcloud compute instances add-tags ${GCP_INSTANCE_NAME:-<instance>} --tags=treescout --zone=${GCP_ZONE:-us-central1-a}"
     fi
 }
 
