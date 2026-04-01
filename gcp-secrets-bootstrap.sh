@@ -116,6 +116,9 @@ create_secrets_config() {
 #   - Keep this file OUT of version control — it contains real secrets.
 # =============================================================================
 
+# GCP project to push secrets into (avoids interactive project selection)
+GCP_PROJECT_ID=""         # e.g. treescout-491720
+
 # ---------------------------------------------------------------------------
 # REQUIRED
 # ---------------------------------------------------------------------------
@@ -254,10 +257,16 @@ check_prereqs() {
         PROJECT_ID=$(gcloud config get-value project 2>/dev/null || echo "")
     fi
     if [ -z "$PROJECT_ID" ]; then
-        # Try to list accessible projects and let the user pick one
-        log_info "Fetching accessible GCP projects..."
-        local projects_list
-        projects_list=$(gcloud projects list --format="value(projectId)" 2>/dev/null)
+        # Try to list accessible projects and let the user pick one.
+        # Use --limit to avoid hanging on accounts with many projects; add a
+        # 15-second wall-clock timeout so slow responses don't stall the wizard.
+        log_info "Fetching accessible GCP projects (timeout 15s)..."
+        local projects_list=""
+        if command -v timeout >/dev/null 2>&1; then
+            projects_list=$(timeout 15 gcloud projects list --limit=20 --format="value(projectId)" 2>/dev/null || true)
+        else
+            projects_list=$(gcloud projects list --limit=20 --format="value(projectId)" 2>/dev/null || true)
+        fi
         local project_count
         project_count=$(echo "$projects_list" | grep -c . 2>/dev/null || echo 0)
 
@@ -532,6 +541,19 @@ main() {
         echo "║         Non-interactive mode (--from-file)                   ║"
         echo "╚═══════════════════════════════════════════════════════════════╝"
         echo -e "${NC}"
+
+        # Pre-load GCP_PROJECT_ID from the config file so check_prereqs
+        # never needs to call gcloud projects list (which can hang).
+        if [ -f "$CONFIG_FILE" ] && [ -z "$PROJECT_ID" ]; then
+            local _proj_from_file
+            _proj_from_file=$(grep -E '^GCP_PROJECT_ID=' "$CONFIG_FILE" 2>/dev/null \
+                | cut -d'=' -f2- | tr -d '"' | tr -d "'" | xargs 2>/dev/null || true)
+            if [ -n "$_proj_from_file" ]; then
+                PROJECT_ID="$_proj_from_file"
+                log_info "Project ID from config file: $PROJECT_ID"
+            fi
+        fi
+
         check_prereqs
         push_all_from_config
 
