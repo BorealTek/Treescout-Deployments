@@ -424,6 +424,96 @@ setup_iam() {
 }
 
 # ==============================================================================
+# VM ACCESS SCOPES
+# ==============================================================================
+
+setup_vm_scopes() {
+    log_step "VM Access Scopes — enabling Secret Manager scope on your instance"
+
+    echo ""
+    log_info "GCP has two separate access-control layers for Compute Engine:"
+    log_code "  1. IAM role  (already done above) — what the service account is ALLOWED to do"
+    log_code "  2. Access scope — which APIs the VM's OAuth token can actually CALL"
+    log_info "Without 'cloud-platform' scope the Secret Manager API calls will be"
+    log_info "rejected with 'insufficient authentication scopes' even with the correct IAM role."
+    echo ""
+    log_warning "Updating scopes requires stopping the VM (~1–2 min downtime)."
+    echo ""
+
+    # List instances in project
+    local instances_raw
+    instances_raw=$(gcloud compute instances list --project="$PROJECT_ID" \
+        --format="table[no-heading](name,zone.basename())" 2>/dev/null)
+
+    if [ -z "$instances_raw" ]; then
+        log_warning "No Compute Engine instances found in project ${PROJECT_ID}."
+        log_info "When your VM is created, run (from your workstation):"
+        log_code "  gcloud compute instances stop   <name> --zone=<zone>"
+        log_code "  gcloud compute instances set-service-account <name> --zone=<zone> --scopes=cloud-platform"
+        log_code "  gcloud compute instances start  <name> --zone=<zone>"
+        echo ""
+        return 0
+    fi
+
+    echo "  Instances in project ${PROJECT_ID}:"
+    local i=1
+    local names=() zones=()
+    while IFS=$'\t ' read -r name zone; do
+        echo "    [$i] $name  ($zone)"
+        names+=("$name")
+        zones+=("$zone")
+        (( i++ ))
+    done <<< "$instances_raw"
+    echo "    [0] Skip — I'll do it manually"
+    echo ""
+
+    local choice
+    read -r -p "  Update scopes on which instance? [0]: " choice
+    choice="${choice:-0}"
+
+    if [[ "$choice" = "0" ]] || [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -ge "$i" ]; then
+        log_info "Skipped. Remember to update scopes before deploying."
+        echo ""
+        return 0
+    fi
+
+    local idx=$(( choice - 1 ))
+    local vm_name="${names[$idx]}"
+    local vm_zone="${zones[$idx]}"
+
+    echo ""
+    log_info "Stopping ${vm_name} (zone: ${vm_zone})..."
+    if ! gcloud compute instances stop "$vm_name" --zone="$vm_zone" --project="$PROJECT_ID" --quiet; then
+        log_warning "Could not stop instance — update scopes manually:"
+        log_code "  gcloud compute instances stop $vm_name --zone=$vm_zone"
+        log_code "  gcloud compute instances set-service-account $vm_name --zone=$vm_zone --scopes=cloud-platform"
+        log_code "  gcloud compute instances start $vm_name --zone=$vm_zone"
+        return 0
+    fi
+
+    log_info "Updating access scopes to cloud-platform..."
+    if gcloud compute instances set-service-account "$vm_name" \
+        --zone="$vm_zone" \
+        --project="$PROJECT_ID" \
+        --scopes=cloud-platform \
+        --quiet; then
+        log_success "Access scopes updated"
+    else
+        log_warning "Scope update failed — you may need owner/editor permissions. Update manually:"
+        log_code "  gcloud compute instances set-service-account $vm_name --zone=$vm_zone --scopes=cloud-platform"
+    fi
+
+    log_info "Starting ${vm_name}..."
+    if gcloud compute instances start "$vm_name" --zone="$vm_zone" --project="$PROJECT_ID" --quiet; then
+        log_success "Instance ${vm_name} is running with cloud-platform scope"
+    else
+        log_warning "Could not start instance — start it manually:"
+        log_code "  gcloud compute instances start $vm_name --zone=$vm_zone"
+    fi
+    echo ""
+}
+
+# ==============================================================================
 # MAIN
 # ==============================================================================
 
@@ -451,6 +541,7 @@ main() {
             verify_secret "$secret" || all_ok=false
         done
         setup_iam
+        setup_vm_scopes
 
         echo ""
         echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
@@ -578,8 +669,9 @@ main() {
         fi
     done
 
-    # ── IAM ───────────────────────────────────────────────────────────────────
+    # ── IAM & VM scopes ───────────────────────────────────────────────────────
     setup_iam
+    setup_vm_scopes
 
     # ── Summary ───────────────────────────────────────────────────────────────
     echo ""

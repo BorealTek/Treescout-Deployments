@@ -359,6 +359,24 @@ setup_monitoring() {
 }
 
 #===============================================================================
+# CONFIG VALIDATION (wraps gcp-config-validate.sh)
+#===============================================================================
+
+run_config_validation() {
+    if [ ! -f "${SCRIPT_DIR}/gcp-config-validate.sh" ]; then
+        log_warning "gcp-config-validate.sh not found — skipping pre-deploy validation"
+        return 0
+    fi
+    local flags=()
+    [ "$AUTO_APPROVE" = true ] && flags+=("--yes")
+    log_step "Pre-deploy Configuration Validation"
+    if ! bash "${SCRIPT_DIR}/gcp-config-validate.sh" "${flags[@]}"; then
+        log_error "Pre-deploy validation failed — fix errors above and re-run"
+        exit 1
+    fi
+}
+
+#===============================================================================
 # GCP SECRET MANAGER
 #===============================================================================
 
@@ -397,6 +415,19 @@ pull_gcp_secrets() {
             log_warning "Could not pull secret '$secret_name' (project: ${GCP_PROJECT_ID})"
             if [ -n "$gcloud_err" ]; then
                 log_warning "  Reason: $gcloud_err"
+            fi
+            # Detect the VM access-scope problem and abort with exact remediation
+            if echo "$gcloud_err" | grep -q "insufficient authentication scopes"; then
+                echo ""
+                log_error "VM ACCESS SCOPE ERROR: this VM was created without the Secret Manager scope."
+                log_info  "Fix — run these three commands from your WORKSTATION (not the VM):"
+                log_code  "  gcloud compute instances stop ${GCP_INSTANCE_NAME:-<instance-name>} --zone=${GCP_ZONE:-us-central1-a}"
+                log_code  "  gcloud compute instances set-service-account ${GCP_INSTANCE_NAME:-<instance-name>} \\"
+                log_code  "    --zone=${GCP_ZONE:-us-central1-a} --scopes=cloud-platform"
+                log_code  "  gcloud compute instances start ${GCP_INSTANCE_NAME:-<instance-name>} --zone=${GCP_ZONE:-us-central1-a}"
+                echo ""
+                log_error "Aborting. Re-run gcp_deploy.sh after updating the VM access scopes."
+                exit 1
             fi
             log_info "  Falling back to deploy.conf value for ${var_name}"
         fi
@@ -618,6 +649,7 @@ main() {
     health_check_gcp
     detect_gcp_environment
     load_config
+    run_config_validation
     pull_gcp_secrets
 
     # Create GCP-specific resources

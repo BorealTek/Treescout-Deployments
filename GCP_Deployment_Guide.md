@@ -91,8 +91,11 @@ gcloud compute instances create freescout-prod \
   --image-project=debian-cloud \
   --machine-type=e2-standard-2 \
   --zone=us-central1-a \
-  --boot-disk-size=50GB
+  --boot-disk-size=50GB \
+  --scopes=cloud-platform
 ```
+
+> **`--scopes=cloud-platform` is required.** Without it the VM's OAuth token will not have permission to call the Secret Manager API, causing all secret pulls to fail with "insufficient authentication scopes" even if the IAM role is correct. If you created your instance without this flag, see [Secrets not pulling](#secrets-not-pulling-at-deploy-time).
 
 Verify it has an external IP:
 
@@ -509,6 +512,18 @@ cd /opt/freescout-docker && docker compose ps
 gcloud secrets versions access latest --secret="freescout-repo-token"
 # If permission denied → re-run gcp-secrets-bootstrap.sh (IAM step) from workstation
 ```
+
+**"insufficient authentication scopes"** — the VM was created without `--scopes=cloud-platform`. Fix:
+
+```bash
+# Run from your workstation (not the VM) — takes ~2 min downtime
+gcloud compute instances stop   treescout-prod --zone=us-central1-a
+gcloud compute instances set-service-account treescout-prod \
+  --zone=us-central1-a --scopes=cloud-platform
+gcloud compute instances start  treescout-prod --zone=us-central1-a
+```
+
+The [`gcp-secrets-bootstrap.sh`](gcp-secrets-bootstrap.sh) script will also offer to do this for you interactively.
 
 ### Database connection failed
 
