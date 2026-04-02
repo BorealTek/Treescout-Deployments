@@ -1,483 +1,411 @@
-# FreeScout GCP Deployment Guide
-
-Complete guide to deploying FreeScout + all BorealTek modules on Google Cloud Platform using Docker Compose and GCP Secret Manager.
+# TreeScout GCP Deployment Guide
 
 ---
 
 ## Contents
 
-1. [Requirements](#requirements)
-2. [Architecture](#architecture)
-3. [Phase 1 — Create GCP Instance](#phase-1--create-gcp-instance)
-4. [Phase 2 — Bootstrap Secrets](#phase-2--bootstrap-secrets)
-5. [Phase 3 — Configure deploy.conf](#phase-3--configure-deployconf)
-6. [Phase 4 — Validate & Deploy](#phase-4--validate--deploy)
-7. [Post-Deployment Checklist](#post-deployment-checklist)
-8. [Day-to-Day Operations](#day-to-day-operations)
-9. [Redeploy / Update](#redeploy--update)
-10. [Production Upgrades](#production-upgrades)
-11. [Troubleshooting](#troubleshooting)
-12. [Cost Reference](#cost-reference)
+1. [Prerequisites](#prerequisites)
+2. [Step 1 — Fill in secrets.conf](#step-1--fill-in-secretsconf)
+3. [Step 2 — Workstation setup script](#step-2--workstation-setup-script-gcp-workstation-setupsh)
+4. [Step 3 — Server bootstrap script](#step-3--server-bootstrap-script-gcp-server-initsh)
+5. [Architecture](#architecture)
+6. [Secret Manager — full key reference](#secret-manager--full-key-reference)
+7. [Instance metadata — full key reference](#instance-metadata--full-key-reference)
+8. [Re-deploy / Update](#re-deploy--update)
+9. [Rotate a secret](#rotate-a-secret)
+10. [Day-to-Day Operations](#day-to-day-operations)
+11. [Production upgrades](#production-upgrades)
+12. [Troubleshooting](#troubleshooting)
+13. [Cost reference](#cost-reference)
 
 ---
 
-## Requirements
+## Prerequisites
 
-| Requirement | Notes |
-|-------------|-------|
-| GCP account with billing enabled | https://console.cloud.google.com |
-| `gcloud` CLI installed & authenticated | `gcloud auth login` |
-| GitHub PAT token | https://github.com/settings/tokens — scope: `repo` |
-| Domain name or GCP external IP | e.g. `34.x.x.x.nip.io` for testing |
-| Machine: e2-standard-2 or larger | 2 vCPU, 8 GB RAM minimum |
+| Tool | Notes |
+|------|-------|
+| `gcloud` CLI | https://cloud.google.com/sdk/docs/install |
+| Git Bash (Windows) or WSL2 | https://git-scm.com/download/win |
+| GCP project with billing enabled | https://console.cloud.google.com |
+| GitHub PAT | https://github.com/settings/tokens — scope: `repo` |
+
+The workstation scripts work from **Git Bash on Windows**, WSL2, or macOS Terminal.
+No tools need to be installed on the server beforehand — the server bootstrap handles that.
+
+---
+
+## Step 1 — Fill in `secrets.conf`
+
+`secrets.conf` is the **single source of truth** for a deployment. It lives only on
+your workstation and is never committed to version control.
+
+Generate the template:
+
+```bash
+bash deployment/gcp-secrets-bootstrap.sh --create-config
+# Edit secrets.conf — fill in every value before proceeding
+```
+
+**Minimum required fields:**
+
+| Field | Description |
+|-------|-------------|
+| `GCP_PROJECT_ID` | Your GCP project ID (e.g. `treescout-491720`) |
+| `DOMAIN_NAME` | Domain or GCP external IP (e.g. `34.x.x.x.nip.io` for testing) |
+| `ADMIN_EMAIL` | Admin login email |
+| `REPO_TOKEN` | GitHub PAT with `repo` scope for private module repos |
+| `DB_ROOT_PASS` | MariaDB root password |
+| `DB_PASS` | MariaDB app-user password |
+| `ADMIN_PASS` | Admin account initial password |
+
+All other fields are optional — leave blank to skip.
+
+See [Secret Manager — full key reference](#secret-manager--full-key-reference) and
+[Instance metadata — full key reference](#instance-metadata--full-key-reference) for
+the complete list.
+
+---
+
+## Step 2 — Workstation setup script (`gcp-workstation-setup.sh`)
+
+```bash
+bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf
+```
+
+This is **idempotent** — safe to run repeatedly to assert or repair the setup.
+
+### What it does (in order)
+
+| # | Action | Details |
+|---|--------|---------|
+| 1 | **Select project** | Reads `GCP_PROJECT_ID` from `secrets.conf`; falls back to `gcloud` default or interactive list |
+| 2 | **Enable APIs** | `compute.googleapis.com`, `secretmanager.googleapis.com`, `iam.googleapis.com` |
+| 3 | **Assert / create VM** | Creates `GCP_INSTANCE_NAME` in `GCP_ZONE` with `GCP_MACHINE_TYPE`, `GCP_DISK_SIZE` GB, `--scopes=cloud-platform`, and network tag `GCP_NETWORK_TAG`. If the VM exists, checks that the scope and tag are correct and fixes them automatically (stop/update/start cycle if scope is missing). |
+| 4 | **IAM binding** | Grants the Compute Engine default service account `roles/secretmanager.secretAccessor` on the project |
+| 5 | **Firewall rule** | Creates `GCP_FIREWALL_RULE_NAME` allowing `tcp:80,443` from `ALLOWED_SOURCE_RANGES`, targeting `GCP_NETWORK_TAG`. Updates if rule already exists but has wrong settings. |
+| 6 | **Push secrets** | Upserts every non-empty secret from `secrets.conf` into GCP Secret Manager (see [full key reference](#secret-manager--full-key-reference)) |
+| 7 | **Write instance metadata** | Stores all non-secret config values as `ts-*` custom metadata keys on the VM (see [full key reference](#instance-metadata--full-key-reference)). The server script reads these — no `deploy.conf` needs to be placed on the server. |
+| 8 | **Verify secrets** | Reads back the four required secrets to confirm IAM propagated correctly |
+| 9 | **Offer SSH deploy** | Asks whether to pipe `gcp-server-init.sh` over SSH automatically |
+
+### Flags
+
+| Flag | Effect |
+|------|--------|
+| `--from-file=secrets.conf` | Load config non-interactively |
+| `--project=PROJECT_ID` | Override project selection |
+| `--yes` / `-y` | Skip confirmation prompts (CI use) |
+| `--skip-deploy` | Run steps 1-8 only; don't offer the SSH deploy |
+
+---
+
+## Step 3 — Server bootstrap script (`gcp-server-init.sh`)
+
+The workstation script will offer to SSH in and run this automatically.
+Run manually if needed:
+
+```bash
+gcloud compute ssh treescout-prod --zone=us-central1-a \
+  --project=YOUR_PROJECT_ID -- 'sudo bash -s' < deployment/gcp-server-init.sh
+```
+
+No files need to pre-exist on the server. Everything is piped in via stdin.
+
+### What it does (in order)
+
+| # | Action | Details |
+|---|--------|---------|
+| 1 | **Verify on GCP** | Checks the metadata service is reachable; aborts with a clear message if run outside GCP |
+| 2 | **Obtain OAuth token** | Fetches the VM service account token from the metadata service; aborts if the `cloud-platform` scope is missing with exact remediation steps |
+| 3 | **Install system deps** | `apt-get update` + `ca-certificates curl gnupg git openssl python3 jq` |
+| 4 | **Install Docker CE** | Adds the official Docker apt repo, installs `docker-ce`, `docker-ce-cli`, `containerd.io`, `docker-buildx-plugin`, `docker-compose-plugin`, and enables the Docker service. No-ops if already installed. |
+| 5 | **Install gcloud CLI** | Adds the Google Cloud SDK apt repo and installs `google-cloud-cli`. No-ops if already installed. |
+| 6 | **Configure gcloud auth** | Injects the metadata-service OAuth token via `CLOUDSDK_AUTH_ACCESS_TOKEN` and clears any locally-stored `core/account` config. This ensures VM scopes are honoured rather than stale user credentials. |
+| 7 | **Read instance metadata** | Pulls all `ts-*` custom metadata keys written by the workstation script. Validates that `ts-domain` and `ts-admin-email` are present; fails immediately with a helpful message if they are missing. |
+| 8 | **Pull secrets** | Calls `gcloud secrets versions access latest` for all `treescout-*` secrets. Required secrets hard-abort if missing; optional ones are silently skipped. |
+| 9 | **Clone repo** | Clones (or pulls) `GIT_REPO_URL` at `GIT_BRANCH` into `/opt/treescout-deploy`. Uses `REPO_TOKEN` for the initial clone URL, then immediately rewrites the remote to strip the token. |
+| 10 | **Generate `deploy.conf`** | Writes an ephemeral `deploy.conf` assembled from the metadata and secrets pulled above. File is `chmod 600 / chown root:root` — not readable by other users, not committed anywhere. |
+| 11 | **Exec deploy** | `exec sudo -E bash gcp_deploy.sh --yes` — hands off to the existing deploy pipeline |
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Google Cloud Platform                                       │
-│                                                              │
-│  Secret Manager                                              │
-│  ├─ freescout-repo-token                  (GitHub PAT)      │
-│  ├─ freescout-db-root-pass / db-pass                        │
-│  ├─ freescout-admin-pass                                     │
-│  ├─ freescout-agent/finance/reporter-pass (optional)        │
-│  ├─ freescout-google-client-id/secret     (optional)        │
-│  ├─ freescout-google-admin-emails         (optional)        │
-│  ├─ freescout-google-allowed-domains      (optional)        │
-│  ├─ freescout-action1-sync-client-id/secret (optional)      │
-│  ├─ freescout-action1-automation-runner-*  (optional)       │
-│  └─ freescout-action1-script-manager-*    (optional)        │
-│                        ↓ pulled at deploy time               │
-│  Compute Engine Instance (e2-standard-2, Debian 12)         │
-│  ├─ External IP ←── GCP Firewall Rule (allow-freescout-https)│
-│  └─ /opt/freescout-docker/                                   │
-│     └─ Docker Compose                                        │
-│        ├─ app    Nginx + PHP 8.3 (HTTPS :443)               │
-│        ├─ db     MariaDB 10.6 (internal only)               │
-│        ├─ redis  Session & cache                             │
-│        ├─ queue  Laravel queue worker                        │
-│        ├─ cron   Task scheduler                              │
-│        └─ reverb WebSocket server                            │
-└──────────────────────────────────────────────────────────────┘
-```
+workstation (Windows Git Bash / WSL2)
+  ┌──────────────────────────────────────────────────────────────┐
+  │  secrets.conf                                                │
+  │    GCP_PROJECT_ID, DOMAIN_NAME, ADMIN_EMAIL                 │
+  │    REPO_TOKEN, DB_*_PASS, ADMIN_PASS                        │
+  │    GOOGLE_*, ACTION1_*, ...                                  │
+  └──────────────┬───────────────────────────────────┬──────────┘
+                 │ gcp-workstation-setup.sh           │
+                 ▼                                    ▼
+    GCP Secret Manager                   Compute VM — custom metadata
+    ┌──────────────────────┐             ┌──────────────────────────┐
+    │ treescout-repo-token │             │ ts-domain                │
+    │ treescout-db-*-pass  │             │ ts-admin-email           │
+    │ treescout-admin-pass │             │ ts-git-repo/branch       │
+    │ treescout-google-*   │             │ ts-db-user/name/host     │
+    │ treescout-action1-*  │             │ ts-allowed-ranges        │
+    └──────────────────────┘             │ ts-agent/finance/...     │
+                                         └──────────────────────────┘
 
-**Script flow:**
-
-```
-gcp_deploy.sh
-  1. Detect GCP instance metadata
-  2. Load deploy.conf
-  3. Pull secrets from Secret Manager
-  4. Create firewall rules + apply network tags
-  5. exec → docker_deploy.sh
-              ├─ Clone FreeScout repo
-              ├─ Clone & install modules (using REPO_TOKEN from SM)
-              ├─ Generate SSL certs
-              └─ docker compose up -d
+GCP Compute VM (Debian 12, e2-standard-2+)
+  ┌──────────────────────────────────────────────────────────────┐
+  │  gcp-server-init.sh                                          │
+  │  ├─ installs Docker CE, gcloud CLI, git                     │
+  │  ├─ reads custom metadata  →  non-secret config             │
+  │  ├─ pulls Secret Manager   →  secrets                       │
+  │  ├─ clones app repo                                         │
+  │  ├─ generates deploy.conf  (chmod 600, root-only, ephemeral) │
+  │  └─ exec → gcp_deploy.sh → docker_deploy.sh                │
+  │             └─ docker compose up -d                         │
+  │                ├─ app    (Nginx + PHP 8.3, HTTPS :443)      │
+  │                ├─ db     (MariaDB 10.6, internal only)      │
+  │                ├─ redis  (session & cache)                   │
+  │                ├─ queue  (Laravel queue worker)              │
+  │                ├─ cron   (task scheduler)                    │
+  │                └─ reverb (WebSocket server)                  │
+  └──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Phase 1 — Create GCP Instance
+## Secret Manager — full key reference
 
-Run from your **local workstation**.
+All secrets are namespaced `treescout-*` with automatic replication.
+Pushed by `gcp-workstation-setup.sh` (or `gcp-secrets-bootstrap.sh`).
 
-```bash
-gcloud compute instances create freescout-prod \
-  --image-family=debian-12 \
-  --image-project=debian-cloud \
-  --machine-type=e2-standard-2 \
-  --zone=us-central1-a \
-  --boot-disk-size=50GB \
-  --scopes=cloud-platform
-```
+### Required
 
-> **`--scopes=cloud-platform` is required.** Without it the VM's OAuth token will not have permission to call the Secret Manager API, causing all secret pulls to fail with "insufficient authentication scopes" even if the IAM role is correct. If you created your instance without this flag, see [Secrets not pulling](#secrets-not-pulling-at-deploy-time).
+| Secret name | `secrets.conf` key | Description |
+|------------|-------------------|-------------|
+| `treescout-repo-token` | `REPO_TOKEN` | GitHub PAT (`repo` scope) for private module repos |
+| `treescout-db-root-pass` | `DB_ROOT_PASS` | MariaDB root password |
+| `treescout-db-pass` | `DB_PASS` | MariaDB app-user password |
+| `treescout-admin-pass` | `ADMIN_PASS` | Admin account initial password |
 
-Verify it has an external IP:
+### Optional — seeded user accounts
 
-```bash
-gcloud compute instances describe treescout-prod  --zone=us-central1-a   --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
-```
+| Secret name | `secrets.conf` key | Description |
+|------------|-------------------|-------------|
+| `treescout-agent-pass` | `AGENT_PASS` | Agent account password |
+| `treescout-finance-pass` | `FINANCE_PASS` | Finance account password |
+| `treescout-reporter-pass` | `REPORTER_PASS` | Reporter account password |
 
-Pre-deploy checklist:
-- [x] Instance created and running
-- [x] Can SSH: `gcloud compute ssh freescout-prod --zone=us-central1-a`
-- [x] Disk: 50 GB minimum
+### Optional — Google OAuth (requires GoogleAdmin module)
 
----
+| Secret name | `secrets.conf` key | Description |
+|------------|-------------------|-------------|
+| `treescout-google-client-id` | `GOOGLE_CLIENT_ID` | OAuth 2.0 Client ID |
+| `treescout-google-client-secret` | `GOOGLE_CLIENT_SECRET` | OAuth 2.0 Client Secret |
+| `treescout-google-admin-emails` | `GOOGLE_ADMIN_EMAILS` | CSV — emails auto-promoted to admin on first OAuth sign-in |
+| `treescout-google-allowed-domains` | `GOOGLE_ALLOWED_DOMAINS` | CSV — domains whose new users are auto-provisioned as internal accounts |
 
-## Phase 2 — Bootstrap Secrets
+> `GOOGLE_ALLOWED_DOMAINS` only gates **new account auto-provisioning**. Existing users
+> can always sign in with Google regardless of domain.
 
-Run from your **local workstation** (not the VM). This creates all credentials in GCP Secret Manager so nothing sensitive ever touches the config file.
+### Optional — Action1 RMM (requires Action1 module)
 
-```bash
-git clone https://github.com/BorealTek/Treescout-Deployments.git
-cd Treescout-Deployments
-bash deployment/gcp-secrets-bootstrap.sh
-```
-
-The wizard will prompt for each secret, confirm your input, and create or update the secret in Secret Manager. It also grants the Compute Engine default service account the `secretAccessor` IAM role.
-
-Secrets created:
-
-**Required secrets:**
-
-| Secret name | What it holds |
-|-------------|---------------|
-| `freescout-repo-token` | GitHub PAT (scope: `repo`) for private module repos |
-| `freescout-db-root-pass` | MariaDB root password |
-| `freescout-db-pass` | MariaDB application-user password |
-| `freescout-admin-pass` | Admin account initial password |
-
-**Optional — seeded user accounts:**
-
-| Secret name | What it holds |
-|-------------|---------------|
-| `freescout-agent-pass` | Agent account password |
-| `freescout-finance-pass` | Finance account password |
-| `freescout-reporter-pass` | Reporter account password |
-
-**Optional — Google OAuth (requires GoogleAdmin module):**
-
-| Secret name | What it holds |
-|-------------|---------------|
-| `freescout-google-client-id` | Google OAuth 2.0 Client ID |
-| `freescout-google-client-secret` | Google OAuth 2.0 Client Secret |
-| `freescout-google-admin-emails` | Comma-separated emails auto-promoted to admin on first OAuth sign-in |
-| `freescout-google-allowed-domains` | Comma-separated domains whose users are auto-provisioned as internal accounts |
-
-> **`GOOGLE_ALLOWED_DOMAINS` behaviour:** existing users (already in the database) can always sign in with Google regardless of domain. This setting only gates **new account auto-provisioning** — users from unlisted domains are denied the ability to create a new account via Google OAuth, but can still be added manually by an admin.
-
-**Optional — Action1 RMM (requires Action1 module):**
-
-| Secret name | What it holds |
-|-------------|---------------|
-| `freescout-action1-sync-client-id` | Action1 Sync role OAuth Client ID (read-only inventory) |
-| `freescout-action1-sync-client-secret` | Action1 Sync role OAuth Client Secret |
-| `freescout-action1-automation-runner-client-id` | Action1 Automation Runner role Client ID (execute scripts) |
-| `freescout-action1-automation-runner-client-secret` | Action1 Automation Runner role Client Secret |
-| `freescout-action1-script-manager-client-id` | Action1 Script Manager role Client ID (create/modify scripts) |
-| `freescout-action1-script-manager-client-secret` | Action1 Script Manager role Client Secret |
-
-To rotate any secret later:
-
-```bash
-echo -n "NewPassword!" | gcloud secrets versions add freescout-admin-pass --data-file=-
-```
-
-Pre-deploy checklist:
-- [ ] All required secrets created (bootstrap script shows ✔ for each)
-- [ ] Can verify readability: `gcloud secrets versions access latest --secret="freescout-repo-token"`
-- [ ] Compute Engine SA has `secretAccessor` role (bootstrap handles this)
+| Secret name | `secrets.conf` key | Description |
+|------------|-------------------|-------------|
+| `treescout-action1-sync-client-id` | `ACTION1_SYNC_CLIENT_ID` | Sync role — read-only inventory |
+| `treescout-action1-sync-client-secret` | `ACTION1_SYNC_CLIENT_SECRET` | |
+| `treescout-action1-automation-runner-client-id` | `ACTION1_AUTOMATION_RUNNER_CLIENT_ID` | Runner role — execute scripts |
+| `treescout-action1-automation-runner-client-secret` | `ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET` | |
+| `treescout-action1-script-manager-client-id` | `ACTION1_SCRIPT_MANAGER_CLIENT_ID` | Manager role — create/modify scripts |
+| `treescout-action1-script-manager-client-secret` | `ACTION1_SCRIPT_MANAGER_CLIENT_SECRET` | |
+| `treescout-action1-region` | `ACTION1_REGION` | API region: `us` \| `eu` \| `ap` |
 
 ---
 
-## Phase 3 — Configure deploy.conf
+## Instance metadata — full key reference
 
-SSH into the VM:
+Non-secret config stored as `ts-*` custom instance metadata.
+Written by `gcp-workstation-setup.sh`, read by `gcp-server-init.sh`.
 
-```bash
-gcloud compute ssh freescout-prod --zone=us-central1-a
-```
-
-Clone and configure on the VM:
-
-```bash
-mkdir -p /opt/treescout-deploy
-git clone https://github.com/BorealTek/Treescout-Deployments.git /opt/treescout-deploy/deployment
-cd /opt/treescout-deploy
-
-cp deployment/deploy.conf.gcp deploy.conf
-chmod 600 deploy.conf   # Restrict access before editing
-nano deploy.conf
-```
-
-**Only two values are required** — everything else is pulled from Secret Manager:
-
-```bash
-DOMAIN_NAME="your-domain.com"   # Your actual domain or GCP external IP
-ALLOWED_SOURCE_RANGES="0.0.0.0/0"  # Public app: allow all IPs (ports 443/80)
-                                    # Internal/VPN-only: restrict to CIDRs e.g. "203.0.113.0/24,10.0.0.0/8"
-```
-
-> **Public vs. restricted access:** `ALLOWED_SOURCE_RANGES` controls the GCP firewall rule for ports 443 and 80 only. For a customer-facing application, `0.0.0.0/0` is the correct setting — you cannot know all client IPs ahead of time. Use a restricted CIDR only for internal tools accessed over a VPN or from a known office network.
-
-Non-secret values you may want to review:
-
-| Key | Default | Notes |
-|-----|---------|-------|
-| `ADMIN_EMAIL` | `admin@example.com` | Admin login email — change this |
-| `GCP_ZONE` | `us-central1-a` | Auto-detected; override if needed |
-| `EXPOSE_PUBLIC_PORTS` | `true` | Set `false` for internal-only |
-| `REUSE_DB` | `true` | Preserves DB on redeploy |
-| `ENABLE_GCP_LOGGING` | `true` | Ships Docker logs to Cloud Logging |
-| `ENABLE_GCP_BACKUPS` | `false` | **Set `true` before going live** |
-| `GCP_BACKUP_BUCKET` | _(empty)_ | `gs://your-bucket/freescout/` |
-
-### Optional integrations
-
-If you populated Google OAuth or Action1 secrets in Phase 2, ensure the `_SECRET` name entries in `deploy.conf` match (they already do in `deploy.conf.gcp`). Leave the plaintext value fields blank — they are filled automatically at deploy time from Secret Manager.
-
-For Google OAuth, also review:
-
-```bash
-GOOGLE_ADMIN_EMAILS=""          # leave blank — pulled from SM via GOOGLE_ADMIN_EMAILS_SECRET
-GOOGLE_ALLOWED_DOMAINS=""       # leave blank — pulled from SM via GOOGLE_ALLOWED_DOMAINS_SECRET
-```
-
-For Action1, set the region if your organisation is outside the US default:
-
-```bash
-ACTION1_REGION="us"             # us | eu | ap
-```
-
-### Module selection
-
-The default `MODULES_TO_INSTALL` array in `deploy.conf.gcp` includes all 18 BorealTek modules (full internal profile). For a client deployment, trim it to the required profile. The canonical list of modules and profiles lives in `deployment/modules.manifest.json`.
-
-Example trimmed client profile:
-
-```bash
-MODULES_TO_INSTALL=(
-    "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
-    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
-    "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
-    "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
-    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
-)
-```
+| Metadata key | `secrets.conf` key | Default | Description |
+|-------------|-------------------|---------|-------------|
+| `ts-domain` | `DOMAIN_NAME` | — | **Required.** Domain or external IP |
+| `ts-admin-email` | `ADMIN_EMAIL` | — | **Required.** Admin login email |
+| `ts-admin-first` | `ADMIN_FIRST_NAME` | `System` | Admin first name |
+| `ts-admin-last` | `ADMIN_LAST_NAME` | `Administrator` | Admin last name |
+| `ts-git-repo` | `GIT_REPO_URL` | `github.com/Scotchmcdonald/freescout` | App repo URL |
+| `ts-git-branch` | `GIT_BRANCH` | `laravel-11-foundation` | Branch to deploy |
+| `ts-install-dir` | `DEFAULT_INSTALL_DIR` | `/opt/treescout-docker` | Docker Compose root |
+| `ts-docker-subnet` | `DOCKER_SUBNET` | `172.20.0.0/16` | Internal Docker network |
+| `ts-db-user` | `DB_USER` | `treescout` | Database user |
+| `ts-db-name` | `DB_NAME` | `treescout` | Database name |
+| `ts-db-host` | `DB_HOST` | `db` | DB host (`db` = embedded container) |
+| `ts-expose-public` | `EXPOSE_PUBLIC_PORTS` | `true` | Create public firewall rule |
+| `ts-firewall-rule` | `GCP_FIREWALL_RULE_NAME` | `allow-treescout-https` | Firewall rule name |
+| `ts-allowed-ranges` | `ALLOWED_SOURCE_RANGES` | `0.0.0.0/0` | Source CIDRs for the firewall rule |
+| `ts-network-tag` | `GCP_NETWORK_TAG` | `treescout` | VM network tag |
+| `ts-enable-kroki` | `ENABLE_KROKI` | `false` | Start Kroki diagram sidecar |
+| `ts-enable-logging` | `ENABLE_GCP_LOGGING` | `false` | Ship Docker logs to Cloud Logging |
+| `ts-agent-email` | `AGENT_EMAIL` | _(empty = skip)_ | Agent account email |
+| `ts-agent-first/last` | `AGENT_FIRST/LAST_NAME` | `Support Agent` | |
+| `ts-finance-email` | `FINANCE_EMAIL` | _(empty = skip)_ | Finance account email |
+| `ts-finance-first/last` | `FINANCE_FIRST/LAST_NAME` | `Finance Manager` | |
+| `ts-reporter-email` | `REPORTER_EMAIL` | _(empty = skip)_ | Reporter account email |
+| `ts-reporter-first/last` | `REPORTER_FIRST/LAST_NAME` | `Report Viewer` | |
 
 ---
 
-## Phase 4 — Validate & Deploy
+## Re-deploy / Update
 
-### Validate
-
-```bash
-cd /opt/treescout-deploy
-bash deployment/gcp-config-validate.sh
-```
-
-Expected output: all passwords show `managed by Secret Manager`, no errors.
-Warnings about optional settings can be accepted at the prompt.
-
-Pre-deploy checklist:
-- [ ] `DOMAIN_NAME` is not the placeholder value
-- [ ] `ALLOWED_SOURCE_RANGES` is set
-- [ ] `ADMIN_EMAIL` changed from `admin@example.com`
-- [ ] Validator shows 0 errors
-
-### Deploy
+### Update secrets or config only (no redeploy)
 
 ```bash
-sudo bash deployment/gcp_deploy.sh
+# Edit secrets.conf, then:
+bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
 ```
 
-Deployment takes **10–20 minutes** depending on module count. Watch progress in a second terminal:
+### Full redeploy (picks up all latest config and secrets)
 
 ```bash
-gcloud compute ssh freescout-prod --zone=us-central1-a
-cd /opt/freescout-docker && docker compose logs -f app
+# 1. Push any config/secret changes from workstation
+bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
+
+# 2. Re-run server bootstrap (pulls fresh secrets, regenerates deploy.conf, redeploys)
+gcloud compute ssh treescout-prod --zone=us-central1-a \
+  -- 'sudo bash -s' < deployment/gcp-server-init.sh
 ```
 
-### Access
+### Reset to clean state (destructive — deletes all data)
 
 ```bash
-EXTERNAL_IP=$(gcloud compute instances describe freescout-prod \
-  --zone=us-central1-a \
-  --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
-echo "https://$EXTERNAL_IP"
+# SSH into the VM
+gcloud compute ssh treescout-prod --zone=us-central1-a
+
+# On the VM:
+cd /opt/treescout-docker
+docker compose down -v    # ⚠ deletes all volumes and data
 ```
 
-Accept the self-signed certificate warning and log in with `ADMIN_EMAIL` and the password stored in `freescout-admin-pass`.
+Then re-pipe the server init script from your workstation to start fresh.
 
 ---
 
-## Post-Deployment Checklist
+## Rotate a secret
 
-### Infrastructure
-
-- [ ] All containers running: `docker compose ps` (status: `Up`)
-  - `app` · `db` · `redis` · `queue` · `cron` · `reverb`
-- [ ] Firewall rule exists: `gcloud compute firewall-rules list --filter="name:allow-freescout"`
-- [ ] Instance has `freescout` network tag: `gcloud compute instances describe freescout-prod --format='get(tags)'`
-
-### Application
-
-- [ ] Homepage loads at `https://<EXTERNAL_IP>` (accept cert warning for self-signed)
-- [ ] Admin login works
-- [ ] Admin → Modules: all installed modules show **Active**
-- [ ] No PHP errors in logs: `docker compose logs app | grep -i error`
-
-### Database
+Rotation only requires redeploying if the value is used at container startup
+(DB passwords require a container restart; API keys are read at request time).
 
 ```bash
-cd /opt/freescout-docker
-docker compose exec db mysql -u freescout -p -e "SHOW TABLES IN freescout;" 2>/dev/null
+# Update in secrets.conf and push from workstation:
+bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
+
+# Or rotate a single secret directly:
+echo -n "NewPassword!" | gcloud secrets versions add treescout-admin-pass \
+  --project=YOUR_PROJECT_ID --data-file=-
 ```
 
-- [ ] Database `freescout` exists and has tables
+For DB password rotation, update the secret and restart the affected containers:
 
-### Day 1 tasks
-
-- [ ] Configure at least one mailbox (Admin → Mailboxes)
-- [ ] Test sending and receiving email
-- [ ] Set `ENABLE_GCP_BACKUPS="true"` and `GCP_BACKUP_BUCKET` in `deploy.conf`, then redeploy
-- [ ] Plan SSL upgrade (self-signed → Let's Encrypt or GCP Managed Certificate)
+```bash
+gcloud compute ssh treescout-prod --zone=us-central1-a
+cd /opt/treescout-docker && docker compose restart db app queue
+```
 
 ---
 
 ## Day-to-Day Operations
 
-All commands run from `/opt/freescout-docker` on the VM.
+All commands run on the VM under `/opt/treescout-docker`.
 
 ### Logs
 
 ```bash
-docker compose logs -f app     # Application (Nginx + PHP)
-docker compose logs -f queue   # Job queue worker
-docker compose logs -f db      # Database
-docker compose logs --tail=100 | grep -i "error\|exception"
+docker compose logs -f app         # Nginx + PHP
+docker compose logs -f queue       # Job queue worker
+docker compose logs -f db          # MariaDB
+docker compose logs --tail=100 | grep -iE "error|exception"
 ```
 
 ### Service management
 
 ```bash
-docker compose ps              # Status of all containers
-docker compose stop            # Stop all
-docker compose start           # Start all
-docker compose restart queue   # Restart one service
-docker compose exec app bash   # Shell into the app container
+docker compose ps                  # Status of all containers
+docker compose restart queue       # Restart one service
+docker compose stop                # Stop all
+docker compose start               # Start all
+docker compose exec app bash       # Shell into the app container
 ```
 
 ### Database backup
 
 ```bash
-docker compose exec db mysqldump -u freescout -p freescout \
-  > /tmp/freescout-backup-$(date +%F).sql
+docker compose exec db \
+  mysqldump -u treescout -p treescout \
+  > /tmp/treescout-backup-$(date +%F).sql
 ```
 
 ### Disk / resource health
 
 ```bash
-df -h /                        # Disk usage
-docker stats --no-stream       # Container CPU/memory
-docker system df               # Docker layer/volume sizes
-docker system prune -f         # Clean unused layers (safe)
+df -h /                            # Disk usage
+docker stats --no-stream           # Container CPU/memory
+docker system df                   # Docker layer/volume sizes
+docker system prune -f             # Clean unused layers (safe)
 ```
 
 ---
 
-## Redeploy / Update
-
-Always back up the database first.
-
-```bash
-cd /opt/freescout-docker
-
-# 1. Backup
-docker compose exec db mysqldump -u freescout -p freescout \
-  > /tmp/freescout-backup-$(date +%F).sql
-
-# 2. Pull latest code
-git -C /opt/treescout-deploy pull origin master
-
-# 3. Rebuild and restart (REUSE_DB=true preserves data)
-docker compose down
-docker compose up -d --build
-
-# 4. Run any pending migrations
-docker compose exec app php artisan migrate --force
-```
-
-### Reset to clean state (destructive)
-
-```bash
-cd /opt/freescout-docker
-docker compose down -v          # ⚠ Deletes volumes — all data lost
-sudo bash /opt/treescout-deploy/deployment/gcp_deploy.sh
-```
-
----
-
-## Production Upgrades
+## Production upgrades
 
 ### Let's Encrypt SSL (requires public domain + port 80 open)
 
 ```bash
-cd /opt/freescout-docker
-docker compose exec app apt-get install -y certbot python3-certbot-nginx
-docker compose exec app certbot certonly \
-  --standalone \
+docker compose exec app \
+  certbot certonly --standalone \
   -d your-domain.com \
   -m admin@your-domain.com \
-  --agree-tos \
-  --non-interactive
+  --agree-tos --non-interactive
+# Update Nginx SSL certificate paths and restart:
+docker compose restart app
 ```
 
-Update the Nginx SSL certificate paths and restart: `docker compose restart app`
-
-### GCP Managed Certificate (requires Cloud Load Balancer)
+### Google Cloud SQL (managed DB, recommended for high availability)
 
 ```bash
-# 1. Create the certificate
-gcloud compute ssl-certificates create freescout-ssl \
-  --domains=freescout.your-domain.com
-
-# 2. Create health check
-gcloud compute health-checks create https freescout-health \
-  --port=443 --request-path=/health
-
-# 3. Create backend service and wire everything up
-gcloud compute backend-services create freescout-backend \
-  --protocol=HTTPS --health-checks=freescout-health --global
-
-# Update deploy.conf and set USE_MANAGED_SSL="true" for subsequent deploys
-```
-
-### Google Cloud SQL (managed database, recommended for production)
-
-```bash
-# 1. Create instance
-gcloud sql instances create freescout-db \
+gcloud sql instances create treescout-db \
   --database-version=MARIADB_10_6 \
   --tier=db-f1-micro \
   --region=us-central1
 
-# 2. Create database and user
-gcloud sql databases create freescout --instance=freescout-db
-gcloud sql users create freescout --instance=freescout-db --password=STRONG_PASS
+gcloud sql databases create treescout --instance=treescout-db
+gcloud sql users create treescout --instance=treescout-db --password=STRONG_PASS
 
-# 3. Get private IP
-gcloud sql instances describe freescout-db --format='get(ipAddresses[0].ipAddress)'
-
-# 4. Update deploy.conf
-#    DB_HOST="<private_ip>"   DB_PASS="STRONG_PASS"
-# 5. Redeploy: sudo bash deployment/gcp_deploy.sh
+# Get private IP, update secrets.conf with DB_HOST and DB_PASS, then redeploy
 ```
 
 ### Cloud Armor (DDoS / rate limiting)
 
 ```bash
-gcloud compute security-policies create freescout-armor \
+gcloud compute security-policies create treescout-armor \
   --description="Rate limiting and bot protection"
 
 gcloud compute security-policies rules create 1000 \
-  --security-policy=freescout-armor \
+  --security-policy=treescout-armor \
   --action=rate-based-ban \
   --rate-limit-options-enforce-on-key=IP \
   --rate-limit-options-ban-duration-sec=600 \
   --rate-limit-options-exceed-action=deny-429 \
   --rate-limit-options-rate-limit-threshold-count=100 \
   --rate-limit-options-rate-limit-threshold-interval-sec=60
+```
 
-# Attach to backend service after creating a load balancer
-gcloud compute backend-services update freescout-backend \
-  --security-policy=freescout-armor --global
+### Set a billing budget alert
+
+```bash
+gcloud billing budgets create \
+  --billing-account=YOUR_ACCOUNT_ID \
+  --display-name="TreeScout Budget" \
+  --budget-amount=60USD \
+  --threshold-rule=percent=90 \
+  --threshold-rule=percent=100
 ```
 
 ---
@@ -487,129 +415,110 @@ gcloud compute backend-services update freescout-backend \
 ### Cannot reach the application
 
 ```bash
-# 1. Confirm external IP is assigned
-gcloud compute instances describe freescout-prod \
+# Confirm external IP
+gcloud compute instances describe treescout-prod \
   --zone=us-central1-a \
   --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
 
-# 2. Check firewall rule
-gcloud compute firewall-rules describe allow-freescout-https
-# Must show: target-tags: freescout, allow: tcp:443,tcp:80
+# Check firewall rule — targetTags must include: treescout; allow must include: tcp:443,tcp:80
+gcloud compute firewall-rules describe allow-treescout-https
 
-# 3. Check instance tag
-gcloud compute instances describe freescout-prod --format='get(tags)'
-# Must include: freescout
-# If missing: gcloud compute instances add-tags freescout-prod --tags=freescout --zone=us-central1-a
+# Check the VM has the network tag — re-run gcp-workstation-setup.sh if missing
+gcloud compute instances describe treescout-prod \
+  --zone=us-central1-a --format='get(tags)'
 
-# 4. Check containers
-cd /opt/freescout-docker && docker compose ps
+# Check containers on the VM
+docker compose -f /opt/treescout-docker/docker-compose.yml ps
 ```
 
-### Secrets not pulling at deploy time
+### "insufficient authentication scopes" when pulling secrets
+
+The VM was created without `--scopes=cloud-platform`.
+Re-run `gcp-workstation-setup.sh` — it detects this and fixes it automatically.
+
+Or fix manually from your workstation:
 
 ```bash
-# Test access from the VM
-gcloud secrets versions access latest --secret="freescout-repo-token"
-# If permission denied → re-run gcp-secrets-bootstrap.sh (IAM step) from workstation
-```
-
-**"insufficient authentication scopes"** — two layered causes:
-
-**Layer 1 — VM access scope** (set at instance level):
-The VM was created without `--scopes=cloud-platform`. Fix from your workstation:
-```bash
-gcloud compute instances stop   treescout-prod --zone=us-central1-a
+gcloud compute instances stop treescout-prod --zone=us-central1-a
 gcloud compute instances set-service-account treescout-prod \
   --zone=us-central1-a --scopes=cloud-platform
-gcloud compute instances start  treescout-prod --zone=us-central1-a
+gcloud compute instances start treescout-prod --zone=us-central1-a
 ```
 
-**Layer 2 — gcloud `core/account` config** (even after correct VM scopes are set):
-If gcloud on the VM has `core/account` in its config, it uses a locally-cached credential rather than fetching a fresh token from the metadata server. Diagnose and fix on the VM:
-```bash
-# Check
-sudo gcloud config list | grep account
-sudo curl -s -H "Metadata-Flavor: Google" \
-  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/scopes"
+Also check for a stale gcloud account config on the VM:
 
-# Fix: clear the explicit account so gcloud falls back to the metadata server
+```bash
 sudo gcloud config unset core/account
 ```
 
-`gcp_deploy.sh` now also works around this automatically by fetching the metadata token directly and injecting it via `CLOUDSDK_AUTH_ACCESS_TOKEN` before calling gcloud.
+`gcp-server-init.sh` prevents this automatically by injecting the metadata token
+directly via `CLOUDSDK_AUTH_ACCESS_TOKEN`.
 
-The [`gcp-secrets-bootstrap.sh`](gcp-secrets-bootstrap.sh) script will also offer to update VM scopes interactively.
+### Metadata keys missing (`ts-domain not set`)
 
-### Database connection failed
+The workstation script hasn't been run yet, or was run against a different instance.
 
 ```bash
-cd /opt/freescout-docker
-docker compose logs db | tail -30
-docker compose exec app mysql -h db -u freescout -p -e "SHOW DATABASES;"
-docker compose restart db
+# Verify from workstation:
+gcloud compute instances describe treescout-prod \
+  --zone=us-central1-a \
+  --format='yaml(metadata)'
+
+# Re-push metadata:
+bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
 ```
 
 ### Modules won't clone
 
 ```bash
-# Verify token resolves from Secret Manager and is valid
-gcloud secrets versions access latest --secret="freescout-repo-token"
+# Verify the token is present and valid
+gcloud secrets versions access latest \
+  --secret="treescout-repo-token" --project=YOUR_PROJECT_ID
 # Token must start with ghp_ and have repo scope
-# If expired: rotate with echo -n "new_token" | gcloud secrets versions add freescout-repo-token --data-file=-
+# Rotate if expired:
+echo -n "new_ghp_token" | gcloud secrets versions add treescout-repo-token \
+  --project=YOUR_PROJECT_ID --data-file=-
+```
+
+### Database connection failed
+
+```bash
+cd /opt/treescout-docker
+docker compose logs db | tail -30
+docker compose exec app mysql -h db -u treescout -p -e "SHOW DATABASES;"
+docker compose restart db
 ```
 
 ### High CPU / memory
 
 ```bash
 docker stats --no-stream
-# Common causes: queue backlog, slow DB queries, PHP memory limit
-# Quick fix:
-sed -i 's/PHP_MEMORY_LIMIT=512M/PHP_MEMORY_LIMIT=1024M/' /opt/freescout-docker/docker-compose.yml
+# If PHP memory is the culprit:
+sed -i 's/PHP_MEMORY_LIMIT=512M/PHP_MEMORY_LIMIT=1024M/' \
+  /opt/treescout-docker/docker-compose.yml
 docker compose restart app
-```
-
-### Deployment script hangs > 10 minutes
-
-```bash
-# Check for disk full
-df -h /
-# Check Docker build progress
-docker ps
-# Kill and retry with clean state
-docker compose down && docker system prune -f
-sudo bash deployment/gcp_deploy.sh
 ```
 
 ---
 
-## Cost Reference
+## Cost reference
 
-| Component | Est. monthly cost |
-|-----------|-------------------|
-| e2-standard-2 instance (730 h) | ~$35 |
+| Component | Est. monthly |
+|-----------|-------------|
+| e2-standard-2 (730 h) | ~$35 |
 | 50 GB persistent disk | ~$3 |
-| Secret Manager (< 10k accesses/mo) | ~$0 |
-| Cloud SQL db-f1-micro (if used) | ~$15–20 |
+| Secret Manager (< 10k accesses) | ~$0 |
+| Cloud SQL db-f1-micro (optional) | ~$15–20 |
 | Networking (egress) | ~$1–2 |
 | **Total (basic)** | **~$40/month** |
 | **Total (with Cloud SQL)** | **~$55/month** |
 
-Tips: use **e2-medium** (~$25) if load is light; apply **Committed Use Discounts** for 1–3 year terms (20–57% savings); enable auto-shutdown cron for dev/test VMs.
-
-Set a budget alert:
-
-```bash
-gcloud billing budgets create \
-  --billing-account=YOUR_ACCOUNT_ID \
-  --display-name="FreeScout Budget" \
-  --budget-amount=60USD \
-  --threshold-rule=percent=90 \
-  --threshold-rule=percent=100
-```
+Use `e2-medium` (~$25/mo) for lighter workloads; apply Committed Use Discounts for
+20–57% savings on 1–3 year terms.
 
 ---
 
-## GCP Console Quick Links
+## GCP Console quick links
 
 - Compute Instances: https://console.cloud.google.com/compute/instances
 - Firewall Rules: https://console.cloud.google.com/vpc/firewalls
@@ -620,13 +529,14 @@ gcloud billing budgets create \
 
 ---
 
-## Key Files Reference
+## Script reference
 
-| File | Purpose |
-|------|---------|
-| `gcp-secrets-bootstrap.sh` | One-time wizard to create all secrets in Secret Manager |
-| `gcp_deploy.sh` | Main deployer — detects GCP, pulls secrets, creates firewall, launches docker_deploy.sh |
-| `deploy.conf.gcp` | Config template (no secrets — safe to commit) |
-| `gcp-config-validate.sh` | Pre-deploy config validator |
-| `docker_deploy.sh` | Core Docker Compose installer (called by gcp_deploy.sh) |
-| `modules.manifest.json` | Canonical source of truth for module definitions and deployment profiles |
+| Script | Run from | Purpose |
+|--------|----------|---------|
+| `gcp-workstation-setup.sh` | Workstation | Create / assert GCP infrastructure, push secrets, write instance metadata |
+| `gcp-server-init.sh` | VM (piped via SSH) | Install deps, pull secrets + metadata, generate `deploy.conf`, run deploy |
+| `gcp-secrets-bootstrap.sh` | Workstation | Push secrets only — useful for credential rotation without a full setup run |
+| `gcp_deploy.sh` | VM | GCP-aware deploy wrapper: firewall, Cloud Logging setup, then calls `docker_deploy.sh` |
+| `docker_deploy.sh` | VM | Core Docker Compose installer: clone repo, install modules, SSL certs, `compose up` |
+| `gcp-config-validate.sh` | VM | Pre-deploy validator for `deploy.conf` (called automatically by `gcp_deploy.sh`) |
+| `modules.manifest.json` | Reference | Canonical module list and deployment profiles |

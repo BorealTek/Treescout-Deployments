@@ -105,53 +105,139 @@ create_secrets_config() {
 
     cat > "$out" <<'EOF'
 # =============================================================================
-# TreeScout GCP Secrets Config
+# TreeScout — Full Deployment Configuration
 #
-# Fill in the values below, then run:
+# This file is the SINGLE SOURCE OF TRUTH for a GCP deployment.
+# It lives only on your workstation — NEVER commit it to version control.
+#
+# Usage:
+#   # Push secrets + configure GCP infrastructure (run from workstation):
+#   bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf
+#
+#   # Push secrets only (legacy / re-rotate credentials):
 #   bash deployment/gcp-secrets-bootstrap.sh --from-file=secrets.conf
 #
 # Rules:
-#   - Leave a value empty ("") to skip that secret (safe for optional ones).
-#   - REQUIRED values must be non-empty or the script will abort.
-#   - Keep this file OUT of version control — it contains real secrets.
+#   - REQUIRED values must be non-empty or setup will abort.
+#   - Leave OPTIONAL values empty ("") to skip them.
+#   - Values marked [metadata] are stored as GCP instance custom metadata.
+#   - Values marked [secret]   are stored in GCP Secret Manager.
 # =============================================================================
 
-# GCP project to push secrets into (avoids interactive project selection)
-GCP_PROJECT_ID=""         # e.g. treescout-491720
+# =============================================================================
+# GCP INFRASTRUCTURE
+# These control which project / zone / instance are created or asserted.
+# =============================================================================
 
-# ---------------------------------------------------------------------------
-# REQUIRED
-# ---------------------------------------------------------------------------
-REPO_TOKEN=""             # GitHub PAT (scope: repo) for private module repos
-DB_ROOT_PASS=""           # MariaDB root password
-DB_PASS=""                # MariaDB application-user password
-ADMIN_PASS=""             # Admin account initial password
+GCP_PROJECT_ID=""             # [required] e.g. treescout-491720
+GCP_ZONE="us-central1-a"     # [metadata] Compute zone
+GCP_INSTANCE_NAME="treescout-prod"  # [metadata] VM name
+GCP_MACHINE_TYPE="e2-standard-2"    # Machine type (2 vCPU / 8 GB RAM minimum)
+GCP_DISK_SIZE="50"            # Boot disk size in GB (minimum 50)
+GCP_NETWORK_TAG="treescout"   # [metadata] Network tag used by firewall rule
+GCP_FIREWALL_RULE_NAME="allow-treescout-https"  # [metadata] Firewall rule name
 
-# ---------------------------------------------------------------------------
-# OPTIONAL — seeded user accounts
-# ---------------------------------------------------------------------------
-AGENT_PASS=""             # Agent account password
-FINANCE_PASS=""           # Finance account password
-REPORTER_PASS=""          # Reporter account password
+# Allowed source CIDRs for the HTTPS firewall rule.
+# Use "0.0.0.0/0" for public access, or a specific IP/CIDR to lock it down.
+ALLOWED_SOURCE_RANGES="0.0.0.0/0"  # [metadata]
 
-# ---------------------------------------------------------------------------
+# =============================================================================
+# APPLICATION CONFIGURATION  (stored as instance metadata — not secrets)
+# =============================================================================
+
+# Domain for the application (e.g. tickets.yourcompany.com or 34.x.x.x.nip.io)
+DOMAIN_NAME=""               # [metadata] REQUIRED
+
+# Git repository and branch to deploy
+GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"  # [metadata]
+GIT_BRANCH="laravel-11-foundation"  # [metadata]
+
+# Server-side installation path for the running app
+DEFAULT_INSTALL_DIR="/opt/treescout-docker"  # [metadata]
+
+# Docker internal network subnet (change only if it conflicts with your VPN)
+DOCKER_SUBNET="172.20.0.0/16"  # [metadata]
+
+# Database connection settings (passwords are in Secret Manager)
+DB_HOST="db"            # [metadata] Use "db" for the embedded container
+DB_USER="treescout"     # [metadata]
+DB_NAME="treescout"     # [metadata]
+
+# Expose the app via the GCP firewall rule (set false for internal-only)
+EXPOSE_PUBLIC_PORTS="true"  # [metadata]
+
+# Optional: enable Kroki diagram rendering sidecar container
+ENABLE_KROKI="false"        # [metadata]
+
+# Optional: ship Docker logs to GCP Cloud Logging
+ENABLE_GCP_LOGGING="false"  # [metadata]
+
+# =============================================================================
+# ADMIN USER  (created on first deploy — stored as instance metadata + secret)
+# =============================================================================
+
+ADMIN_EMAIL=""               # [metadata] REQUIRED  e.g. admin@yourcompany.com
+ADMIN_FIRST_NAME="System"    # [metadata]
+ADMIN_LAST_NAME="Administrator"  # [metadata]
+ADMIN_PASS=""                # [secret]  REQUIRED
+
+# =============================================================================
+# OPTIONAL SEEDED USER ACCOUNTS
+# Leave the email blank to skip creating that account.
+# =============================================================================
+
+# Agent — standard support access
+AGENT_EMAIL=""               # [metadata] e.g. helpdesk@yourcompany.com
+AGENT_FIRST_NAME="Support"   # [metadata]
+AGENT_LAST_NAME="Agent"      # [metadata]
+AGENT_PASS=""                # [secret]
+
+# Finance — billing & invoice access
+FINANCE_EMAIL=""             # [metadata]
+FINANCE_FIRST_NAME="Finance" # [metadata]
+FINANCE_LAST_NAME="Manager"  # [metadata]
+FINANCE_PASS=""              # [secret]
+
+# Reporter — read-only access
+REPORTER_EMAIL=""            # [metadata]
+REPORTER_FIRST_NAME="Report" # [metadata]
+REPORTER_LAST_NAME="Viewer"  # [metadata]
+REPORTER_PASS=""             # [secret]
+
+# =============================================================================
+# SECRETS  (stored in GCP Secret Manager — never written to the VM filesystem)
+# =============================================================================
+
+REPO_TOKEN=""             # [secret] REQUIRED  GitHub PAT (scope: repo)
+DB_ROOT_PASS=""           # [secret] REQUIRED  MariaDB root password
+DB_PASS=""                # [secret] REQUIRED  MariaDB app-user password
+
+# =============================================================================
 # OPTIONAL — Google OAuth  (requires GoogleAdmin module)
-# ---------------------------------------------------------------------------
+# =============================================================================
+
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
 GOOGLE_ADMIN_EMAILS=""    # CSV — emails auto-promoted to admin on first OAuth sign-in
 GOOGLE_ALLOWED_DOMAINS="" # CSV — domains whose new users are auto-provisioned internally
 
-# ---------------------------------------------------------------------------
-# OPTIONAL — Action1 RMM  (requires Action1 module)
-# ---------------------------------------------------------------------------
+# =============================================================================
+# OPTIONAL — Action1 RMM  (requires Action1 module, 3 least-privilege roles)
+# =============================================================================
+
+ACTION1_REGION="us"          # API region: us | eu | ap
+
+# Sync role (read-only inventory)
 ACTION1_SYNC_CLIENT_ID=""
 ACTION1_SYNC_CLIENT_SECRET=""
+
+# Automation Runner role (execute pre-vetted scripts)
 ACTION1_AUTOMATION_RUNNER_CLIENT_ID=""
 ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET=""
+
+# Script Manager role (create/modify scripts — admin/dev only)
 ACTION1_SCRIPT_MANAGER_CLIENT_ID=""
 ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
-ACTION1_REGION="us"          # Region for Action1 API (e.g. us, eu)
 EOF
 
     chmod 600 "$out"
@@ -576,9 +662,13 @@ main() {
         fi
         echo ""
         echo -e "${CYAN}Next steps:${NC}"
-        log_code "  1. Edit  deployment/deploy.conf.gcp  — set DOMAIN_NAME, ALLOWED_SOURCE_RANGES"
-        log_code "  2. Validate:  bash deployment/gcp-config-validate.sh"
-        log_code "  3. Deploy:    sudo bash deployment/gcp_deploy.sh"
+        log_code "  Recommended — full setup in one command (creates instance, sets metadata, SSHs to deploy):"
+        log_code "    bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf"
+        echo ""
+        log_code "  Or, legacy manual flow (secrets only — still need deploy.conf on server):"
+        log_code "    1. Edit  deployment/deploy.conf.gcp  — set DOMAIN_NAME, ALLOWED_SOURCE_RANGES"
+        log_code "    2. Validate:  bash deployment/gcp-config-validate.sh"
+        log_code "    3. Deploy:    sudo bash deployment/gcp_deploy.sh"
         echo ""
         exit 0
     fi
