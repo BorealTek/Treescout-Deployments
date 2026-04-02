@@ -320,6 +320,28 @@ assert_or_create_instance() {
 _assert_instance_config() {
     local need_scope_fix=false
 
+    # Check instance status and start if it's terminated
+    local status
+    status=$(gcloud compute instances describe "$GCP_INSTANCE_NAME" \
+        --zone="$GCP_ZONE" --project="$PROJECT_ID" \
+        --format="value(status)" 2>/dev/null || echo "UNKNOWN")
+
+    if [ "$status" = "TERMINATED" ]; then
+        log_warning "Instance is TERMINATED. Starting it now..."
+        if gcloud compute instances start "$GCP_INSTANCE_NAME" \
+            --zone="$GCP_ZONE" --project="$PROJECT_ID" --quiet; then
+            log_success "Instance started successfully"
+        else
+            log_error "Failed to start instance"
+            ERRORS=$(( ERRORS + 1 ))
+            return 1
+        fi
+    elif [ "$status" != "RUNNING" ]; then
+        log_warning "Instance state is '$status' (must be RUNNING for SSH later)"
+    else
+        log_success "Instance state: RUNNING"
+    fi
+
     # Check machine type
     local actual_type
     actual_type=$(gcloud compute instances describe "$GCP_INSTANCE_NAME" \

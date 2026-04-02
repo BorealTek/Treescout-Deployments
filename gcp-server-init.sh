@@ -356,7 +356,7 @@ _apex_domain() {
         fi
         candidate="${candidate#*.}"
     done
-    
+
     # Fallback to naive parsing if the API fails entirely
     echo "$fqdn" | awk -F. '{if (NF>=2) {print $(NF-1)"."$NF} else {print $0}}'
 }
@@ -367,7 +367,7 @@ _apex_domain() {
 _record_name() {
     local fqdn="$1" apex="$2"
     local sub="${fqdn%.$apex}"
-    
+
     if [ "$sub" = "$fqdn" ] || [ -z "$sub" ]; then
         echo "@"
     else
