@@ -779,13 +779,27 @@ _probe_ssh_command() {
         --project="$PROJECT_ID"
         --command='echo ssh-ok'
         --quiet
+        --ssh-flag="-o BatchMode=yes"
+        --ssh-flag="-o ConnectTimeout=10"
+        --ssh-flag="-o StrictHostKeyChecking=accept-new"
     )
 
     if [ "$mode" = "iap" ]; then
         ssh_args+=(--tunnel-through-iap)
     fi
 
-    gcloud "${ssh_args[@]}" >/dev/null 2>&1
+    # Retry up to 3 times — SSH key propagation to VM metadata can take ~30-60 s
+    local attempt
+    for attempt in 1 2 3; do
+        if gcloud "${ssh_args[@]}" >/dev/null 2>&1; then
+            return 0
+        fi
+        if [ "$attempt" -lt 3 ]; then
+            log_info "SSH probe attempt ${attempt}/3 failed via ${mode} — retrying in 20s (SSH key propagation)..."
+            sleep 20
+        fi
+    done
+    return 1
 }
 
 _run_bootstrap_command() {
@@ -820,6 +834,67 @@ _run_bootstrap_stdin() {
     gcloud "${ssh_args[@]}" -- 'sudo bash -s' < "$script_path"
 }
 
+_diagnose_ssh_failure() {
+    echo ""
+    log_warning "Diagnosing SSH failure..."
+
+    # Check IAP firewall rule exists
+    local rule_ok=false
+    if gcloud compute firewall-rules describe "$GCP_SSH_FIREWALL_RULE_NAME" \
+        --project="$PROJECT_ID" >/dev/null 2>&1; then
+        local src_ranges
+        src_ranges=$(gcloud compute firewall-rules describe "$GCP_SSH_FIREWALL_RULE_NAME" \
+            --project="$PROJECT_ID" --format="value(sourceRanges[])" 2>/dev/null || echo "")
+        if echo "$src_ranges" | grep -q "35.235.240.0"; then
+            log_success "Firewall rule '$GCP_SSH_FIREWALL_RULE_NAME' exists with IAP source range."
+            rule_ok=true
+        else
+            log_error "Firewall rule '$GCP_SSH_FIREWALL_RULE_NAME' exists but is MISSING 35.235.240.0/20."
+            log_code "gcloud compute firewall-rules update $GCP_SSH_FIREWALL_RULE_NAME --source-ranges=35.235.240.0/20 --project=$PROJECT_ID"
+        fi
+    else
+        log_error "IAP SSH firewall rule '$GCP_SSH_FIREWALL_RULE_NAME' does NOT exist."
+        log_code "gcloud compute firewall-rules create $GCP_SSH_FIREWALL_RULE_NAME --allow=tcp:22 --source-ranges=35.235.240.0/20 --target-tags=$GCP_NETWORK_TAG --project=$PROJECT_ID"
+    fi
+
+    # Check VM has the required network tag
+    local tag_ok=false
+    local tags
+    tags=$(gcloud compute instances describe "$GCP_INSTANCE_NAME" \
+        --zone="$GCP_ZONE" --project="$PROJECT_ID" \
+        --format="value(tags.items[])" 2>/dev/null || echo "")
+    if echo "$tags" | grep -q "$GCP_NETWORK_TAG"; then
+        log_success "Instance tag '$GCP_NETWORK_TAG' is set."
+        tag_ok=true
+    else
+        log_error "Instance '$GCP_INSTANCE_NAME' is MISSING network tag '$GCP_NETWORK_TAG'."
+        log_code "gcloud compute instances add-tags $GCP_INSTANCE_NAME --zone=$GCP_ZONE --tags=$GCP_NETWORK_TAG --project=$PROJECT_ID"
+    fi
+
+    # Check instance is RUNNING
+    local status
+    status=$(gcloud compute instances describe "$GCP_INSTANCE_NAME" \
+        --zone="$GCP_ZONE" --project="$PROJECT_ID" \
+        --format="value(status)" 2>/dev/null || echo "UNKNOWN")
+    if [ "$status" = "RUNNING" ]; then
+        log_success "Instance status: RUNNING"
+    else
+        log_error "Instance status: $status (must be RUNNING for SSH to work)"
+        log_code "gcloud compute instances start $GCP_INSTANCE_NAME --zone=$GCP_ZONE --project=$PROJECT_ID"
+    fi
+
+    if [ "$rule_ok" = true ] && [ "$tag_ok" = true ] && [ "$status" = "RUNNING" ]; then
+        log_warning "Infrastructure looks correct — sshd may not be ready yet or key propagation is slow."
+        log_info "Wait 60 s and re-run, or SSH manually:"
+    else
+        log_info "Fix the issue(s) above, then re-run this script."
+    fi
+    echo ""
+    log_code "gcloud compute ssh $GCP_INSTANCE_NAME --project=$PROJECT_ID --zone=$GCP_ZONE --tunnel-through-iap"
+    log_info "To deep-diagnose the IAP tunnel:"
+    log_code "gcloud compute ssh $GCP_INSTANCE_NAME --project=$PROJECT_ID --zone=$GCP_ZONE --troubleshoot --tunnel-through-iap"
+}
+
 _select_ssh_mode() {
     local ext_ip
     ext_ip=$(gcloud compute instances describe "$GCP_INSTANCE_NAME" \
@@ -834,19 +909,17 @@ _select_ssh_mode() {
             echo "direct"
             return 0
         fi
+        log_info "Direct SSH probe failed — falling back to IAP."
     fi
 
-    log_info "Testing SSH over IAP tunnel..."
+    log_info "Testing SSH over IAP tunnel (up to 3 attempts × 20 s)..."
     if _probe_ssh_command "iap"; then
         echo "iap"
         return 0
     fi
 
     log_error "Unable to establish SSH to $GCP_INSTANCE_NAME (direct or IAP)."
-    log_info "Troubleshooting commands:"
-    log_code "gcloud compute ssh $GCP_INSTANCE_NAME --project=$PROJECT_ID --zone=$GCP_ZONE --troubleshoot"
-    log_code "gcloud compute ssh $GCP_INSTANCE_NAME --project=$PROJECT_ID --zone=$GCP_ZONE --troubleshoot --tunnel-through-iap"
-    log_info "Common fix: ensure firewall allows tcp:22 from 35.235.240.0/20 to tag '$GCP_NETWORK_TAG'."
+    _diagnose_ssh_failure
     return 1
 }
 

@@ -339,10 +339,25 @@ pull_secrets() {
 # ==============================================================================
 
 # Extracts the apex registered domain from a FQDN.
-# e.g. treescout.example.com -> example.com
-#      example.com            -> example.com
+# Correctly handles ccTLDs (.co.uk) by querying the GoDaddy API to verify ownership.
 _apex_domain() {
     local fqdn="$1"
+    local auth="$2"
+    local candidate="$fqdn"
+
+    while echo "$candidate" | grep -q '\.'; do
+        local status
+        status=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -H "Authorization: $auth" \
+            "https://api.godaddy.com/v1/domains/${candidate}" 2>/dev/null || echo "000")
+        if [ "$status" = "200" ]; then
+            echo "$candidate"
+            return 0
+        fi
+        candidate="${candidate#*.}"
+    done
+    
+    # Fallback to naive parsing if the API fails entirely
     echo "$fqdn" | awk -F. '{if (NF>=2) {print $(NF-1)"."$NF} else {print $0}}'
 }
 
@@ -352,10 +367,11 @@ _apex_domain() {
 _record_name() {
     local fqdn="$1" apex="$2"
     local sub="${fqdn%.$apex}"
+    
     if [ "$sub" = "$fqdn" ] || [ -z "$sub" ]; then
         echo "@"
     else
-        echo "$sub"
+        echo "${sub%.}"
     fi
 }
 
@@ -377,15 +393,15 @@ register_godaddy_dns() {
     fi
     log_info "Public IP: $public_ip"
 
+    local auth_header="sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}"
     local apex record_name
-    apex=$(_apex_domain "$DOMAIN_NAME")
+    apex=$(_apex_domain "$DOMAIN_NAME" "$auth_header")
     record_name=$(_record_name "$DOMAIN_NAME" "$apex")
 
     log_info "Domain:      $DOMAIN_NAME"
     log_info "Apex:        $apex"
     log_info "Record name: ${record_name} (A → $public_ip)"
 
-    local auth_header="sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}"
     local api_url="https://api.godaddy.com/v1/domains/${apex}/records/A/${record_name}"
     local payload="[{\"data\":\"${public_ip}\",\"ttl\":600}]"
 
@@ -402,22 +418,6 @@ register_godaddy_dns() {
         log_warning "GoDaddy API returned HTTP $http_status — DNS not updated automatically."
         log_info "Set the record manually in the GoDaddy console:"
         log_code "Type: A  |  Name: ${record_name}  |  Value: $public_ip  |  TTL: 600 s"
-    fi
-
-    # If a www record is needed for root domains, add it too
-    if [ "$record_name" = "@" ]; then
-        local www_url="https://api.godaddy.com/v1/domains/${apex}/records/A/www"
-        local www_status
-        www_status=$(curl -sf -o /dev/null -w "%{http_code}" \
-            -X PUT "$www_url" \
-            -H "Authorization: $auth_header" \
-            -H "Content-Type: application/json" \
-            -d "$payload" 2>/dev/null || echo "000")
-        if [ "$www_status" = "200" ]; then
-            log_success "GoDaddy A record updated: www.${apex} → $public_ip (TTL 600)"
-        else
-            log_info "www record update returned HTTP $www_status (may not exist — that's OK)"
-        fi
     fi
 }
 
@@ -504,11 +504,25 @@ if [ -z "$PUBLIC_IP" ]; then
 fi
 
 # Derive apex domain and GoDaddy record name
-APEX=$(echo "$DOMAIN_NAME" | awk -F. '{if (NF>=2) print $(NF-1)"."$NF; else print $0}')
-SUB="${DOMAIN_NAME%.$APEX}"
-if [ "$SUB" = "$DOMAIN_NAME" ] || [ -z "$SUB" ]; then RECORD="@"; else RECORD="$SUB"; fi
-
 AUTH="sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}"
+
+APEX="$DOMAIN_NAME"
+while echo "$APEX" | grep -q '\.'; do
+    STATUS=$(curl -sf -o /dev/null -w "%{http_code}" -H "Authorization: ${AUTH}" "https://api.godaddy.com/v1/domains/${APEX}" 2>/dev/null || echo "000")
+    if [ "$STATUS" = "200" ]; then
+        break
+    fi
+    APEX="${APEX#*.}"
+done
+
+if ! echo "$APEX" | grep -q '\.'; then
+    # Fallback to naive parsing if API fails entirely
+    APEX=$(echo "$DOMAIN_NAME" | awk -F. '{if (NF>=2) print $(NF-1)"."$NF; else print $0}')
+fi
+
+SUB="${DOMAIN_NAME%.$APEX}"
+if [ "$SUB" = "$DOMAIN_NAME" ] || [ -z "$SUB" ]; then RECORD="@"; else RECORD="${SUB%.}"; fi
+
 PAYLOAD="[{\"data\":\"${PUBLIC_IP}\",\"ttl\":600}]"
 
 echo "Updating GoDaddy: ${RECORD}.${APEX} → ${PUBLIC_IP}"
@@ -523,20 +537,6 @@ if [ "$STATUS" = "200" ]; then
 else
     echo "ERROR: GoDaddy API returned HTTP ${STATUS}" >&2
     exit 1
-fi
-
-# Also keep www in sync for root-domain deployments
-if [ "$RECORD" = "@" ]; then
-    WWW_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
-        -X PUT "https://api.godaddy.com/v1/domains/${APEX}/records/A/www" \
-        -H "Authorization: ${AUTH}" \
-        -H "Content-Type: application/json" \
-        -d "${PAYLOAD}" 2>/dev/null || echo "000")
-    if [ "$WWW_STATUS" = "200" ]; then
-        echo "SUCCESS: www.${APEX} → ${PUBLIC_IP}"
-    else
-        echo "INFO: www record returned HTTP ${WWW_STATUS} (may not exist — OK)"
-    fi
 fi
 UPDATER_EOF
 
@@ -904,563 +904,6 @@ main() {
     write_app_files
     deploy
     post_deploy
-}
-
-main "$@"
-
-
-# Config values (read from instance metadata)
-DOMAIN_NAME=""
-ADMIN_EMAIL=""
-ADMIN_FIRST_NAME="System"
-ADMIN_LAST_NAME="Administrator"
-GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
-GIT_BRANCH="laravel-11-foundation"
-DEFAULT_INSTALL_DIR="/opt/treescout-docker"
-DOCKER_SUBNET="172.20.0.0/16"
-DB_USER="treescout"
-DB_NAME="treescout"
-DB_HOST="db"
-EXPOSE_PUBLIC_PORTS="true"
-GCP_FIREWALL_RULE_NAME="allow-treescout-https"
-ALLOWED_SOURCE_RANGES="0.0.0.0/0"
-GCP_NETWORK_TAG="treescout"
-ENABLE_KROKI="false"
-ENABLE_GCP_LOGGING="false"
-
-# Deploy dest for deployment scripts (defaults to same repo as app)
-DEPLOY_DIR="/opt/treescout-deploy"
-
-# ==============================================================================
-# GCP METADATA SERVICE HELPERS
-# ==============================================================================
-
-readonly METADATA_BASE="http://metadata.google.internal/computeMetadata/v1"
-
-# Fetch any metadata endpoint
-_meta() {
-    curl -s -f -H "Metadata-Flavor: Google" "${METADATA_BASE}/$1" 2>/dev/null || echo ""
-}
-
-# Read a custom instance attribute (ts-* keys set by gcp-workstation-setup.sh)
-_attr() {
-    _meta "instance/attributes/$1"
-}
-
-# ==============================================================================
-# STEP 1 — Verify running on GCP
-# ==============================================================================
-
-verify_on_gcp() {
-    log_step "Verifying GCP environment"
-
-    if ! curl -s -f -H "Metadata-Flavor: Google" \
-        "${METADATA_BASE}/project/project-id" >/dev/null 2>&1; then
-        log_error "GCP metadata service not reachable."
-        log_error "This script must be run on a GCP Compute Engine instance."
-        exit 1
-    fi
-
-    GCP_PROJECT_ID=$(_meta "project/project-id")
-    GCP_INSTANCE_NAME=$(_meta "instance/name")
-    GCP_ZONE=$(_meta "instance/zone" | awk -F'/' '{print $NF}')
-
-    log_success "Running on GCP"
-    log_code "Project:  $GCP_PROJECT_ID"
-    log_code "Instance: $GCP_INSTANCE_NAME"
-    log_code "Zone:     $GCP_ZONE"
-}
-
-# ==============================================================================
-# STEP 2 — Obtain service account OAuth token
-# ==============================================================================
-
-fetch_gce_token() {
-    log_step "Obtaining service account OAuth token"
-
-    GCE_TOKEN=$(_meta "instance/service-accounts/default/token" \
-        | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null || echo "")
-
-    if [ -z "$GCE_TOKEN" ]; then
-        log_error "Could not obtain OAuth token from metadata service."
-        log_error "Ensure the VM has the 'cloud-platform' access scope."
-        log_info "Fix from your workstation:"
-        log_code "gcloud compute instances stop $GCP_INSTANCE_NAME --zone=$GCP_ZONE"
-        log_code "gcloud compute instances set-service-account $GCP_INSTANCE_NAME --zone=$GCP_ZONE --scopes=cloud-platform"
-        log_code "gcloud compute instances start $GCP_INSTANCE_NAME --zone=$GCP_ZONE"
-        exit 1
-    fi
-
-    log_success "OAuth token obtained (expires in ~3600s)"
-}
-
-# ==============================================================================
-# STEP 3 — Install system dependencies
-# ==============================================================================
-
-install_system_deps() {
-    log_step "Installing system dependencies"
-
-    export DEBIAN_FRONTEND=noninteractive
-
-    log_info "Updating apt package lists..."
-    apt-get update -qq
-
-    log_info "Installing base packages..."
-    apt-get install -y -q \
-        ca-certificates \
-        curl \
-        gnupg \
-        lsb-release \
-        git \
-        openssl \
-        python3 \
-        jq \
-        apt-transport-https \
-        software-properties-common
-
-    log_success "Base packages installed"
-}
-
-# ==============================================================================
-# STEP 4 — Install Docker CE + Compose plugin
-# ==============================================================================
-
-install_docker() {
-    log_step "Installing Docker"
-
-    if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-        log_success "Docker + Compose already installed: $(docker --version)"
-        return
-    fi
-
-    log_info "Adding Docker's official GPG key and repository..."
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/debian/gpg \
-        | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null
-    chmod a+r /etc/apt/keyrings/docker.gpg
-
-    echo \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/debian \
-$(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-        | tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-    apt-get update -qq
-
-    log_info "Installing docker-ce, docker-compose-plugin..."
-    apt-get install -y -q \
-        docker-ce \
-        docker-ce-cli \
-        containerd.io \
-        docker-buildx-plugin \
-        docker-compose-plugin
-
-    systemctl enable --now docker
-
-    log_success "Docker installed: $(docker --version)"
-    log_success "Compose installed: $(docker compose version)"
-}
-
-# ==============================================================================
-# STEP 5 — Install gcloud CLI (required by gcp_deploy.sh)
-# ==============================================================================
-
-install_gcloud() {
-    log_step "Installing gcloud CLI"
-
-    if command -v gcloud >/dev/null 2>&1; then
-        log_success "gcloud already installed: $(gcloud version --format='value(Google Cloud SDK)' 2>/dev/null || echo 'version unknown')"
-        return
-    fi
-
-    log_info "Adding Google Cloud SDK apt repository..."
-    curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-        | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg 2>/dev/null
-
-    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] \
-https://packages.cloud.google.com/apt cloud-sdk main" \
-        | tee /etc/apt/sources.list.d/google-cloud-sdk.list > /dev/null
-
-    apt-get update -qq
-    apt-get install -y -q google-cloud-cli
-
-    log_success "gcloud installed: $(gcloud version --format='value(Google Cloud SDK)' 2>/dev/null)"
-}
-
-# ==============================================================================
-# STEP 6 — Configure gcloud to use the VM's service account token
-# ==============================================================================
-
-configure_gcloud_auth() {
-    log_step "Configuring gcloud authentication"
-
-    # Use the token obtained from the metadata service.
-    # This ensures the VM's OAuth scopes are honoured, regardless of any
-    # gcloud user account or Application Default Credentials that may exist.
-    export CLOUDSDK_AUTH_ACCESS_TOKEN="$GCE_TOKEN"
-    export CLOUDSDK_CORE_PROJECT="$GCP_PROJECT_ID"
-    unset GOOGLE_APPLICATION_CREDENTIALS   # prevent key-file override
-
-    # Clear any locally configured user account that would override the token
-    gcloud config unset core/account 2>/dev/null || true
-
-    log_success "gcloud will use VM service account token"
-}
-
-# ==============================================================================
-# STEP 7 — Read non-secret config from instance custom metadata (ts-* keys)
-# ==============================================================================
-
-read_metadata() {
-    log_step "Reading configuration from instance metadata"
-
-    DOMAIN_NAME=$(_attr "ts-domain")
-    ADMIN_EMAIL=$(_attr "ts-admin-email")
-    ADMIN_FIRST_NAME=$(_attr "ts-admin-first")
-    ADMIN_LAST_NAME=$(_attr "ts-admin-last")
-    GIT_REPO_URL=$(_attr "ts-git-repo")
-    GIT_BRANCH=$(_attr "ts-git-branch")
-    DEFAULT_INSTALL_DIR=$(_attr "ts-install-dir")
-    DOCKER_SUBNET=$(_attr "ts-docker-subnet")
-    DB_USER=$(_attr "ts-db-user")
-    DB_NAME=$(_attr "ts-db-name")
-    DB_HOST=$(_attr "ts-db-host")
-    EXPOSE_PUBLIC_PORTS=$(_attr "ts-expose-public")
-    GCP_FIREWALL_RULE_NAME=$(_attr "ts-firewall-rule")
-    ALLOWED_SOURCE_RANGES=$(_attr "ts-allowed-ranges")
-    GCP_NETWORK_TAG=$(_attr "ts-network-tag")
-    ENABLE_KROKI=$(_attr "ts-enable-kroki")
-    ENABLE_GCP_LOGGING=$(_attr "ts-enable-logging")
-
-    # Optional user emails
-    local attr_agent_email attr_finance_email attr_reporter_email
-    attr_agent_email=$(_attr "ts-agent-email")
-    attr_finance_email=$(_attr "ts-finance-email")
-    attr_reporter_email=$(_attr "ts-reporter-email")
-
-    # Apply defaults for values that weren't set in metadata
-    if [ -z "$GIT_REPO_URL" ];           then GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"; fi
-    if [ -z "$GIT_BRANCH" ];             then GIT_BRANCH="laravel-11-foundation"; fi
-    if [ -z "$DEFAULT_INSTALL_DIR" ];    then DEFAULT_INSTALL_DIR="/opt/treescout-docker"; fi
-    if [ -z "$DOCKER_SUBNET" ];          then DOCKER_SUBNET="172.20.0.0/16"; fi
-    if [ -z "$DB_USER" ];                then DB_USER="treescout"; fi
-    if [ -z "$DB_NAME" ];                then DB_NAME="treescout"; fi
-    if [ -z "$DB_HOST" ];                then DB_HOST="db"; fi
-    if [ -z "$EXPOSE_PUBLIC_PORTS" ];    then EXPOSE_PUBLIC_PORTS="true"; fi
-    if [ -z "$GCP_FIREWALL_RULE_NAME" ]; then GCP_FIREWALL_RULE_NAME="allow-treescout-https"; fi
-    if [ -z "$ALLOWED_SOURCE_RANGES" ];  then ALLOWED_SOURCE_RANGES="0.0.0.0/0"; fi
-    if [ -z "$GCP_NETWORK_TAG" ];        then GCP_NETWORK_TAG="treescout"; fi
-    if [ -z "$ENABLE_KROKI" ];           then ENABLE_KROKI="false"; fi
-    if [ -z "$ENABLE_GCP_LOGGING" ];     then ENABLE_GCP_LOGGING="false"; fi
-
-    # Validate required values that must have been set by workstation script
-    local missing=false
-    if [ -z "$DOMAIN_NAME" ]; then
-        log_error "ts-domain metadata key not set — run gcp-workstation-setup.sh first"
-        missing=true
-    fi
-    if [ -z "$ADMIN_EMAIL" ]; then
-        log_error "ts-admin-email metadata key not set — run gcp-workstation-setup.sh first"
-        missing=true
-    fi
-    if [ "$missing" = true ]; then exit 1; fi
-
-    log_success "Metadata read:"
-    log_code "Domain:      $DOMAIN_NAME"
-    log_code "Admin:       $ADMIN_EMAIL"
-    log_code "Git repo:    $GIT_REPO_URL ($GIT_BRANCH)"
-    log_code "Install dir: $DEFAULT_INSTALL_DIR"
-    log_code "DB:          $DB_NAME (user: $DB_USER)"
-    [ -n "$attr_agent_email" ]    && log_code "Agent:       $attr_agent_email" || true
-    [ -n "$attr_finance_email" ]  && log_code "Finance:     $attr_finance_email" || true
-    [ -n "$attr_reporter_email" ] && log_code "Reporter:    $attr_reporter_email" || true
-
-    # Export optional user info for deploy.conf generation
-    AGENT_EMAIL="$attr_agent_email"
-    AGENT_FIRST_NAME=$(_attr "ts-agent-first")
-    AGENT_LAST_NAME=$(_attr "ts-agent-last")
-    FINANCE_EMAIL="$attr_finance_email"
-    FINANCE_FIRST_NAME=$(_attr "ts-finance-first")
-    FINANCE_LAST_NAME=$(_attr "ts-finance-last")
-    REPORTER_EMAIL="$attr_reporter_email"
-    REPORTER_FIRST_NAME=$(_attr "ts-reporter-first")
-    REPORTER_LAST_NAME=$(_attr "ts-reporter-last")
-}
-
-# ==============================================================================
-# STEP 8 — Pull secrets from GCP Secret Manager
-# ==============================================================================
-
-_pull_secret() {
-    local var_name="$1"
-    local secret_name="$2"
-    local required="${3:-optional}"
-
-    local value
-    value=$(gcloud secrets versions access latest \
-        --secret="$secret_name" \
-        --project="$GCP_PROJECT_ID" 2>/dev/null || echo "")
-
-    if [ -z "$value" ]; then
-        if [ "$required" = "required" ]; then
-            log_error "Required secret not found or empty: $secret_name"
-            log_info "Ensure gcp-workstation-setup.sh has been run to push secrets."
-            exit 1
-        fi
-        log_info "Secret not set (skipping): $secret_name"
-        return
-    fi
-
-    # Export the value into the named variable
-    export "${var_name}=${value}"
-    log_success "Pulled: $secret_name → \$$var_name"
-}
-
-pull_secrets() {
-    log_step "Pulling secrets from GCP Secret Manager"
-
-    _pull_secret "REPO_TOKEN"    "treescout-repo-token"    "required"
-    _pull_secret "DB_ROOT_PASS"  "treescout-db-root-pass"  "required"
-    _pull_secret "DB_PASS"       "treescout-db-pass"       "required"
-    _pull_secret "ADMIN_PASS"    "treescout-admin-pass"    "required"
-
-    _pull_secret "AGENT_PASS"    "treescout-agent-pass"
-    _pull_secret "FINANCE_PASS"  "treescout-finance-pass"
-    _pull_secret "REPORTER_PASS" "treescout-reporter-pass"
-
-    _pull_secret "GOOGLE_CLIENT_ID"       "treescout-google-client-id"
-    _pull_secret "GOOGLE_CLIENT_SECRET"   "treescout-google-client-secret"
-    _pull_secret "GOOGLE_ADMIN_EMAILS"    "treescout-google-admin-emails"
-    _pull_secret "GOOGLE_ALLOWED_DOMAINS" "treescout-google-allowed-domains"
-
-    _pull_secret "ACTION1_SYNC_CLIENT_ID"                "treescout-action1-sync-client-id"
-    _pull_secret "ACTION1_SYNC_CLIENT_SECRET"            "treescout-action1-sync-client-secret"
-    _pull_secret "ACTION1_AUTOMATION_RUNNER_CLIENT_ID"   "treescout-action1-automation-runner-client-id"
-    _pull_secret "ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET" "treescout-action1-automation-runner-client-secret"
-    _pull_secret "ACTION1_SCRIPT_MANAGER_CLIENT_ID"      "treescout-action1-script-manager-client-id"
-    _pull_secret "ACTION1_SCRIPT_MANAGER_CLIENT_SECRET"  "treescout-action1-script-manager-client-secret"
-
-    local action1_region
-    action1_region=$(gcloud secrets versions access latest \
-        --secret="treescout-action1-region" \
-        --project="$GCP_PROJECT_ID" 2>/dev/null || echo "us")
-    ACTION1_REGION="${action1_region:-us}"
-
-    log_success "All required secrets pulled"
-}
-
-# ==============================================================================
-# STEP 9 — Clone the deployment / app repository
-# ==============================================================================
-
-clone_repo() {
-    log_step "Cloning deployment repository"
-
-    mkdir -p "$DEPLOY_DIR"
-
-    local clone_url
-    # Use REPO_TOKEN to authenticate the private-module-capable clone
-    clone_url="https://${REPO_TOKEN}@${GIT_REPO_URL#https://}"
-
-    if [ -d "$DEPLOY_DIR/.git" ]; then
-        log_info "Repository already cloned at $DEPLOY_DIR — pulling latest..."
-        git -C "$DEPLOY_DIR" remote set-url origin "$clone_url" 2>/dev/null || true
-        git -C "$DEPLOY_DIR" fetch --quiet origin
-        git -C "$DEPLOY_DIR" checkout "$GIT_BRANCH" --quiet 2>/dev/null || true
-        git -C "$DEPLOY_DIR" reset --hard "origin/$GIT_BRANCH" --quiet
-        log_success "Repository updated: $GIT_BRANCH"
-    else
-        log_info "Cloning $GIT_REPO_URL (branch: $GIT_BRANCH)..."
-        git clone --branch "$GIT_BRANCH" --depth=1 "$clone_url" "$DEPLOY_DIR" --quiet
-        log_success "Cloned to $DEPLOY_DIR"
-    fi
-
-    # Remove the token from remote URL immediately after clone (security hygiene)
-    git -C "$DEPLOY_DIR" remote set-url origin "$GIT_REPO_URL" 2>/dev/null || true
-}
-
-# ==============================================================================
-# STEP 10 — Generate deploy.conf from secrets + metadata (ephemeral, chmod 600)
-# ==============================================================================
-
-generate_deploy_conf() {
-    log_step "Generating deploy.conf from secrets and instance metadata"
-
-    local conf_path="${DEPLOY_DIR}/deployment/deploy.conf"
-
-    # Write the generated config (never committed — ephemeral to this deploy run)
-    cat > "$conf_path" <<EOF
-#================================================================================
-# deploy.conf — GENERATED BY gcp-server-init.sh  $(date -u '+%Y-%m-%dT%H:%M:%SZ')
-# Do NOT edit by hand. Re-run gcp-server-init.sh to regenerate from source.
-#================================================================================
-
-USE_GCP_SECRET_MANAGER="false"    # Values already pulled and injected below
-
-#--- Installation ---------------------------------------------------------------
-GIT_REPO_URL="${GIT_REPO_URL}"
-GIT_BRANCH="${GIT_BRANCH}"
-DEFAULT_INSTALL_DIR="${DEFAULT_INSTALL_DIR}"
-
-#--- GCP -----------------------------------------------------------------------
-GCP_PROJECT_ID="${GCP_PROJECT_ID}"
-GCP_ZONE="${GCP_ZONE}"
-
-#--- Network -------------------------------------------------------------------
-DOMAIN_NAME="${DOMAIN_NAME}"
-EXPOSE_PUBLIC_PORTS="${EXPOSE_PUBLIC_PORTS}"
-GCP_FIREWALL_RULE_NAME="${GCP_FIREWALL_RULE_NAME}"
-ALLOWED_SOURCE_RANGES="${ALLOWED_SOURCE_RANGES}"
-DOCKER_SUBNET="${DOCKER_SUBNET}"
-
-#--- Database ------------------------------------------------------------------
-DB_HOST="${DB_HOST}"
-DB_USER="${DB_USER}"
-DB_NAME="${DB_NAME}"
-DB_ROOT_PASS="${DB_ROOT_PASS:-}"
-DB_PASS="${DB_PASS:-}"
-
-#--- Admin user ----------------------------------------------------------------
-ADMIN_EMAIL="${ADMIN_EMAIL}"
-ADMIN_FIRST_NAME="${ADMIN_FIRST_NAME}"
-ADMIN_LAST_NAME="${ADMIN_LAST_NAME}"
-ADMIN_PASS="${ADMIN_PASS:-}"
-
-EOF
-
-    # Append optional seeded user accounts if their emails are set
-    if [ -n "${AGENT_EMAIL:-}" ]; then
-        cat >> "$conf_path" <<EOF
-#--- Agent user ----------------------------------------------------------------
-AGENT_EMAIL="${AGENT_EMAIL}"
-AGENT_FIRST_NAME="${AGENT_FIRST_NAME:-Support}"
-AGENT_LAST_NAME="${AGENT_LAST_NAME:-Agent}"
-AGENT_PASS="${AGENT_PASS:-}"
-
-EOF
-    fi
-
-    if [ -n "${FINANCE_EMAIL:-}" ]; then
-        cat >> "$conf_path" <<EOF
-#--- Finance user --------------------------------------------------------------
-FINANCE_EMAIL="${FINANCE_EMAIL}"
-FINANCE_FIRST_NAME="${FINANCE_FIRST_NAME:-Finance}"
-FINANCE_LAST_NAME="${FINANCE_LAST_NAME:-Manager}"
-FINANCE_PASS="${FINANCE_PASS:-}"
-
-EOF
-    fi
-
-    if [ -n "${REPORTER_EMAIL:-}" ]; then
-        cat >> "$conf_path" <<EOF
-#--- Reporter user -------------------------------------------------------------
-REPORTER_EMAIL="${REPORTER_EMAIL}"
-REPORTER_FIRST_NAME="${REPORTER_FIRST_NAME:-Report}"
-REPORTER_LAST_NAME="${REPORTER_LAST_NAME:-Viewer}"
-REPORTER_PASS="${REPORTER_PASS:-}"
-
-EOF
-    fi
-
-    # Append Google OAuth if configured
-    if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
-        cat >> "$conf_path" <<EOF
-#--- Google OAuth --------------------------------------------------------------
-GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
-GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
-GOOGLE_ADMIN_EMAILS="${GOOGLE_ADMIN_EMAILS:-}"
-GOOGLE_ALLOWED_DOMAINS="${GOOGLE_ALLOWED_DOMAINS:-}"
-
-EOF
-    fi
-
-    # Append Action1 if configured
-    if [ -n "${ACTION1_SYNC_CLIENT_ID:-}" ]; then
-        cat >> "$conf_path" <<EOF
-#--- Action1 RMM ---------------------------------------------------------------
-ACTION1_REGION="${ACTION1_REGION:-us}"
-ACTION1_SYNC_CLIENT_ID="${ACTION1_SYNC_CLIENT_ID:-}"
-ACTION1_SYNC_CLIENT_SECRET="${ACTION1_SYNC_CLIENT_SECRET:-}"
-ACTION1_RUN_CLIENT_ID="${ACTION1_AUTOMATION_RUNNER_CLIENT_ID:-}"
-ACTION1_RUN_CLIENT_SECRET="${ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET:-}"
-ACTION1_MANAGE_CLIENT_ID="${ACTION1_SCRIPT_MANAGER_CLIENT_ID:-}"
-ACTION1_MANAGE_CLIENT_SECRET="${ACTION1_SCRIPT_MANAGER_CLIENT_SECRET:-}"
-
-EOF
-    fi
-
-    # Append REPO_TOKEN so docker_deploy.sh can clone private module repos
-    cat >> "$conf_path" <<EOF
-#--- Private repo access -------------------------------------------------------
-REPO_TOKEN="${REPO_TOKEN:-}"
-
-#--- Optional services ---------------------------------------------------------
-ENABLE_KROKI="${ENABLE_KROKI}"
-ENABLE_GCP_LOGGING="${ENABLE_GCP_LOGGING}"
-EOF
-
-    # Restrict permissions — readable only by root (owner), not world
-    chmod 600 "$conf_path"
-    chown root:root "$conf_path"
-
-    log_success "deploy.conf written: $conf_path  (chmod 600)"
-    log_info "Contains NO credentials visible to non-root — ephemeral to this run"
-}
-
-# ==============================================================================
-# STEP 11 — Run gcp_deploy.sh —yes
-# ==============================================================================
-
-run_deployment() {
-    log_step "Launching GCP deployment"
-
-    local deploy_script="${DEPLOY_DIR}/deployment/gcp_deploy.sh"
-
-    if [ ! -f "$deploy_script" ]; then
-        log_error "gcp_deploy.sh not found at $deploy_script"
-        log_error "Ensure the repository was cloned successfully."
-        exit 1
-    fi
-
-    chmod +x "$deploy_script"
-    chmod +x "${DEPLOY_DIR}/deployment/docker_deploy.sh" 2>/dev/null || true
-
-    # Pass the metadata token to gcp_deploy.sh so it can call Secret Manager
-    # if it needs to re-pull anything (e.g. for log/monitoring features)
-    export CLOUDSDK_AUTH_ACCESS_TOKEN="$GCE_TOKEN"
-    export CLOUDSDK_CORE_PROJECT="$GCP_PROJECT_ID"
-
-    log_info "Running: sudo -E bash $deploy_script --yes"
-    echo ""
-
-    cd "${DEPLOY_DIR}/deployment"
-    exec sudo -E bash "$deploy_script" --yes
-}
-
-# ==============================================================================
-# MAIN
-# ==============================================================================
-
-main() {
-    echo ""
-    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║         TreeScout  —  GCP Server Bootstrap                  ║${NC}"
-    echo -e "${CYAN}║   All config loaded from metadata + Secret Manager           ║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
-    echo ""
-
-    verify_on_gcp
-    fetch_gce_token
-    install_system_deps
-    install_docker
-    install_gcloud
-    configure_gcloud_auth
-    read_metadata
-    pull_secrets
-    clone_repo
-    generate_deploy_conf
-    run_deployment
 }
 
 main "$@"
