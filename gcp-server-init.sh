@@ -99,6 +99,10 @@ ACTION1_SYNC_CLIENT_ID="" ACTION1_SYNC_CLIENT_SECRET=""
 ACTION1_AUTOMATION_RUNNER_CLIENT_ID="" ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET=""
 ACTION1_SCRIPT_MANAGER_CLIENT_ID="" ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
 
+# GoDaddy DNS
+GODADDY_API_KEY=""
+GODADDY_API_SECRET=""
+
 # ==============================================================================
 # GCP METADATA HELPERS
 # ==============================================================================
@@ -324,7 +328,249 @@ pull_secrets() {
         2>/dev/null | jq -r '.payload.data' 2>/dev/null | base64 -d 2>/dev/null || echo "")
     if [ -n "$action1_region" ]; then ACTION1_REGION="$action1_region"; fi
 
+    _pull_secret "GODADDY_API_KEY"    "treescout-godaddy-api-key"
+    _pull_secret "GODADDY_API_SECRET" "treescout-godaddy-api-secret"
+
     log_success "All required secrets pulled"
+}
+
+# ==============================================================================
+# STEP 5b — Register / update GoDaddy DNS A record
+# ==============================================================================
+
+# Extracts the apex registered domain from a FQDN.
+# e.g. treescout.example.com -> example.com
+#      example.com            -> example.com
+_apex_domain() {
+    local fqdn="$1"
+    echo "$fqdn" | awk -F. '{if (NF>=2) {print $(NF-1)"."$NF} else {print $0}}'
+}
+
+# Extracts the subdomain / record name for GoDaddy (@ if root).
+# e.g. treescout.example.com -> treescout
+#      example.com            -> @
+_record_name() {
+    local fqdn="$1" apex="$2"
+    local sub="${fqdn%.$apex}"
+    if [ "$sub" = "$fqdn" ] || [ -z "$sub" ]; then
+        echo "@"
+    else
+        echo "$sub"
+    fi
+}
+
+register_godaddy_dns() {
+    if [ -z "$GODADDY_API_KEY" ] || [ -z "$GODADDY_API_SECRET" ]; then
+        log_info "GoDaddy credentials not set — skipping automatic DNS registration."
+        return
+    fi
+
+    log_step "Registering DNS with GoDaddy"
+
+    # Resolve the VM's external IP from the metadata service
+    local public_ip
+    public_ip=$(_meta "instance/network-interfaces/0/access-configs/0/external-ip" || true)
+
+    if [ -z "$public_ip" ]; then
+        log_warning "Could not determine public IP from metadata — skipping DNS registration."
+        return
+    fi
+    log_info "Public IP: $public_ip"
+
+    local apex record_name
+    apex=$(_apex_domain "$DOMAIN_NAME")
+    record_name=$(_record_name "$DOMAIN_NAME" "$apex")
+
+    log_info "Domain:      $DOMAIN_NAME"
+    log_info "Apex:        $apex"
+    log_info "Record name: ${record_name} (A → $public_ip)"
+
+    local auth_header="sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}"
+    local api_url="https://api.godaddy.com/v1/domains/${apex}/records/A/${record_name}"
+    local payload="[{\"data\":\"${public_ip}\",\"ttl\":600}]"
+
+    local http_status
+    http_status=$(curl -sf -o /dev/null -w "%{http_code}" \
+        -X PUT "$api_url" \
+        -H "Authorization: $auth_header" \
+        -H "Content-Type: application/json" \
+        -d "$payload" 2>/dev/null || echo "000")
+
+    if [ "$http_status" = "200" ]; then
+        log_success "GoDaddy A record updated: ${record_name}.${apex} → $public_ip (TTL 600)"
+    else
+        log_warning "GoDaddy API returned HTTP $http_status — DNS not updated automatically."
+        log_info "Set the record manually in the GoDaddy console:"
+        log_code "Type: A  |  Name: ${record_name}  |  Value: $public_ip  |  TTL: 600 s"
+    fi
+
+    # If a www record is needed for root domains, add it too
+    if [ "$record_name" = "@" ]; then
+        local www_url="https://api.godaddy.com/v1/domains/${apex}/records/A/www"
+        local www_status
+        www_status=$(curl -sf -o /dev/null -w "%{http_code}" \
+            -X PUT "$www_url" \
+            -H "Authorization: $auth_header" \
+            -H "Content-Type: application/json" \
+            -d "$payload" 2>/dev/null || echo "000")
+        if [ "$www_status" = "200" ]; then
+            log_success "GoDaddy A record updated: www.${apex} → $public_ip (TTL 600)"
+        else
+            log_info "www record update returned HTTP $www_status (may not exist — that's OK)"
+        fi
+    fi
+}
+
+# ==============================================================================
+# STEP 5c — Install systemd DNS updater (runs on every VM boot)
+#
+# GCP ephemeral IPs change each time the instance starts.  This installs a
+# oneshot systemd service that fetches fresh GoDaddy credentials from Secret
+# Manager and re-registers the A record automatically on every boot.
+# No credentials are written to disk — everything is fetched at runtime.
+# ==============================================================================
+
+install_dns_updater() {
+    if [ -z "$GODADDY_API_KEY" ] || [ -z "$GODADDY_API_SECRET" ]; then
+        log_info "GoDaddy credentials not set — skipping DNS updater installation."
+        return
+    fi
+
+    log_step "Installing boot-time DNS updater (treescout-dns-update)"
+
+    # ── /usr/local/bin/treescout-dns-update ───────────────────────────────────
+    # Written with single-quoted heredoc so variables are NOT expanded here;
+    # the script reads everything from metadata / Secret Manager at boot time.
+    cat > /usr/local/bin/treescout-dns-update <<'UPDATER_EOF'
+#!/usr/bin/env bash
+# treescout-dns-update — refreshes the GoDaddy A record on every VM boot.
+# Credentials are pulled live from GCP Secret Manager; nothing is stored on disk.
+set -euo pipefail
+
+readonly METADATA="http://metadata.google.internal/computeMetadata/v1"
+_meta() { curl -sf -H "Metadata-Flavor: Google" "${METADATA}/$1" 2>/dev/null || echo ""; }
+_attr() { _meta "instance/attributes/$1"; }
+
+# Obtain a fresh service-account OAuth token
+TOKEN=$(python3 -c \
+    "import sys,json; print(json.load(sys.stdin)['access_token'])" \
+    <<< "$(_meta instance/service-accounts/default/token)" 2>/dev/null || echo "")
+if [ -z "$TOKEN" ]; then
+    echo "ERROR: could not obtain OAuth token from metadata service" >&2
+    exit 1
+fi
+
+PROJECT=$(_meta project/project-id)
+if [ -z "$PROJECT" ]; then
+    echo "ERROR: could not determine GCP project from metadata" >&2
+    exit 1
+fi
+
+# Pull a single secret from Secret Manager
+_secret() {
+    curl -sf \
+        -H "Authorization: Bearer ${TOKEN}" \
+        "https://secretmanager.googleapis.com/v1/projects/${PROJECT}/secrets/${1}/versions/latest:access" \
+        2>/dev/null \
+    | python3 -c \
+        "import sys,json,base64; d=json.load(sys.stdin); print(base64.b64decode(d['payload']['data']).decode())" \
+    2>/dev/null || echo ""
+}
+
+GODADDY_API_KEY=$(_secret treescout-godaddy-api-key)
+GODADDY_API_SECRET=$(_secret treescout-godaddy-api-secret)
+DOMAIN_NAME=$(_attr ts-domain)
+
+if [ -z "$GODADDY_API_KEY" ] || [ -z "$GODADDY_API_SECRET" ]; then
+    echo "GoDaddy credentials not in Secret Manager — skipping DNS update."
+    exit 0
+fi
+if [ -z "$DOMAIN_NAME" ]; then
+    echo "ERROR: ts-domain instance attribute not set" >&2
+    exit 1
+fi
+
+# Wait up to 60 s for the external IP to be assigned after boot
+PUBLIC_IP=""
+for i in $(seq 1 12); do
+    PUBLIC_IP=$(_meta instance/network-interfaces/0/access-configs/0/external-ip)
+    [ -n "$PUBLIC_IP" ] && break
+    echo "Waiting for external IP... attempt ${i}/12"
+    sleep 5
+done
+if [ -z "$PUBLIC_IP" ]; then
+    echo "ERROR: external IP still not available after 60 s" >&2
+    exit 1
+fi
+
+# Derive apex domain and GoDaddy record name
+APEX=$(echo "$DOMAIN_NAME" | awk -F. '{if (NF>=2) print $(NF-1)"."$NF; else print $0}')
+SUB="${DOMAIN_NAME%.$APEX}"
+if [ "$SUB" = "$DOMAIN_NAME" ] || [ -z "$SUB" ]; then RECORD="@"; else RECORD="$SUB"; fi
+
+AUTH="sso-key ${GODADDY_API_KEY}:${GODADDY_API_SECRET}"
+PAYLOAD="[{\"data\":\"${PUBLIC_IP}\",\"ttl\":600}]"
+
+echo "Updating GoDaddy: ${RECORD}.${APEX} → ${PUBLIC_IP}"
+STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+    -X PUT "https://api.godaddy.com/v1/domains/${APEX}/records/A/${RECORD}" \
+    -H "Authorization: ${AUTH}" \
+    -H "Content-Type: application/json" \
+    -d "${PAYLOAD}" 2>/dev/null || echo "000")
+
+if [ "$STATUS" = "200" ]; then
+    echo "SUCCESS: ${RECORD}.${APEX} → ${PUBLIC_IP} (TTL 600)"
+else
+    echo "ERROR: GoDaddy API returned HTTP ${STATUS}" >&2
+    exit 1
+fi
+
+# Also keep www in sync for root-domain deployments
+if [ "$RECORD" = "@" ]; then
+    WWW_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+        -X PUT "https://api.godaddy.com/v1/domains/${APEX}/records/A/www" \
+        -H "Authorization: ${AUTH}" \
+        -H "Content-Type: application/json" \
+        -d "${PAYLOAD}" 2>/dev/null || echo "000")
+    if [ "$WWW_STATUS" = "200" ]; then
+        echo "SUCCESS: www.${APEX} → ${PUBLIC_IP}"
+    else
+        echo "INFO: www record returned HTTP ${WWW_STATUS} (may not exist — OK)"
+    fi
+fi
+UPDATER_EOF
+
+    chmod 755 /usr/local/bin/treescout-dns-update
+    log_success "Updater script written: /usr/local/bin/treescout-dns-update"
+
+    # ── systemd service unit ──────────────────────────────────────────────────
+    cat > /etc/systemd/system/treescout-dns.service <<'SERVICE_EOF'
+[Unit]
+Description=Update GoDaddy DNS A record with current external IP
+Documentation=https://github.com/Scotchmcdonald/freescout
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/treescout-dns-update
+RemainAfterExit=no
+StandardOutput=journal
+StandardError=journal
+# Retry up to 3 times if the network isn't fully ready yet
+Restart=on-failure
+RestartSec=15
+StartLimitBurst=3
+StartLimitIntervalSec=120
+
+[Install]
+WantedBy=multi-user.target
+SERVICE_EOF
+
+    systemctl daemon-reload
+    systemctl enable treescout-dns.service
+    log_success "systemd service enabled: treescout-dns.service (runs on every boot)"
+    log_info "View DNS update logs:  journalctl -u treescout-dns.service -n 50"
 }
 
 # ==============================================================================
@@ -652,6 +898,8 @@ main() {
     install_deps
     read_metadata
     pull_secrets
+    register_godaddy_dns
+    install_dns_updater
     docker_login_ghcr
     write_app_files
     deploy

@@ -112,6 +112,10 @@ ACTION1_SCRIPT_MANAGER_CLIENT_ID=""
 ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
 ACTION1_REGION="us"
 
+# GoDaddy DNS (optional — auto-registers A record on first deploy)
+GODADDY_API_KEY=""
+GODADDY_API_SECRET=""
+
 # Optional seeded users
 AGENT_EMAIL=""
 AGENT_FIRST_NAME="Support"
@@ -643,6 +647,9 @@ push_secrets() {
     _push_if_set "Action1 Script Manager Client ID"     "treescout-action1-script-manager-client-id"   "${ACTION1_SCRIPT_MANAGER_CLIENT_ID:-}"
     _push_if_set "Action1 Script Manager Secret"        "treescout-action1-script-manager-client-secret" "${ACTION1_SCRIPT_MANAGER_CLIENT_SECRET:-}"
     _push_if_set "Action1 Region"                       "treescout-action1-region"                     "${ACTION1_REGION:-}"
+
+    _push_if_set "GoDaddy API Key"                       "treescout-godaddy-api-key"                    "${GODADDY_API_KEY:-}"
+    _push_if_set "GoDaddy API Secret"                    "treescout-godaddy-api-secret"                 "${GODADDY_API_SECRET:-}"
 }
 
 # ==============================================================================
