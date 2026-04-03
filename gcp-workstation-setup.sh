@@ -1120,7 +1120,11 @@ offer_server_bootstrap() {
     log_info "The GCP VM is now fully configured via metadata."
     log_info "To deploy TreeScout, run gcp-server-init.sh on the VM:"
     echo ""
-    log_code "cat /path/to/gcp-server-init.sh | gcloud compute ssh $GCP_INSTANCE_NAME --zone=$GCP_ZONE \\"
+    if [ -n "$server_init" ]; then
+        log_code "cat $server_init | gcloud compute ssh $GCP_INSTANCE_NAME --zone=$GCP_ZONE \\"
+    else
+        log_code "cat deployment/gcp-server-init.sh | gcloud compute ssh $GCP_INSTANCE_NAME --zone=$GCP_ZONE \\"
+    fi
     log_code "  --project=$PROJECT_ID -- 'sudo bash -s'"
     echo ""
 
