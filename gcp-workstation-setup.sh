@@ -95,6 +95,7 @@ ADMIN_LAST_NAME="Administrator"
 # Secrets (pushed to Secret Manager)
 APP_KEY=""
 REPO_TOKEN=""
+DOCKER_TOKEN=""
 DB_ROOT_PASS=""
 DB_PASS=""
 ADMIN_PASS=""
@@ -661,6 +662,7 @@ push_secrets() {
 
     _push_if_set "Laravel App Key"                      "treescout-app-key"                            "${APP_KEY:-}"                                 "required"
     _push_if_set "GitHub PAT (REPO_TOKEN)"              "treescout-repo-token"                         "${REPO_TOKEN:-}"                              "required"
+    _push_if_set "GHCR PAT (DOCKER_TOKEN)"              "treescout-docker-token"                       "${DOCKER_TOKEN:-}"
     _push_if_set "Database root password"               "treescout-db-root-pass"                       "${DB_ROOT_PASS:-}"                            "required"
     _push_if_set "Database app-user password"           "treescout-db-pass"                            "${DB_PASS:-}"                                 "required"
     _push_if_set "Admin user password"                  "treescout-admin-pass"                         "${ADMIN_PASS:-}"                              "required"

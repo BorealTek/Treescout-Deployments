@@ -11,7 +11,7 @@
 #   3. Installs Docker CE + jq (idempotent — skips if already present)
 #   4. Reads non-secret config from instance custom metadata (ts-* keys)
 #   5. Pulls secrets from GCP Secret Manager via REST API (no gcloud needed)
-#   6. Tries Docker login to GHCR using REPO_TOKEN from Secret Manager
+#   6. Tries Docker login to GHCR using DOCKER_TOKEN from Secret Manager
 #   7. Writes /opt/treescout/docker-compose.prod.yml and .env
 #   8. Tries docker compose pull; if it fails, builds image locally from source
 #   9. docker compose up -d
@@ -94,7 +94,7 @@ FINANCE_EMAIL="" FINANCE_FIRST_NAME="Finance" FINANCE_LAST_NAME="Manager"
 REPORTER_EMAIL="" REPORTER_FIRST_NAME="Report" REPORTER_LAST_NAME="Viewer"
 
 # Secrets from Secret Manager
-APP_KEY="" REPO_TOKEN="" DB_ROOT_PASS="" DB_PASS="" ADMIN_PASS=""
+APP_KEY="" REPO_TOKEN="" DOCKER_TOKEN="" DB_ROOT_PASS="" DB_PASS="" ADMIN_PASS=""
 AGENT_PASS="" FINANCE_PASS="" REPORTER_PASS=""
 GOOGLE_CLIENT_ID="" GOOGLE_CLIENT_SECRET="" GOOGLE_ADMIN_EMAILS="" GOOGLE_ALLOWED_DOMAINS=""
 ACTION1_REGION="us"
@@ -304,6 +304,7 @@ pull_secrets() {
 
     _pull_secret "APP_KEY"      "treescout-app-key"      "required"
     _pull_secret "REPO_TOKEN"   "treescout-repo-token"   "required"
+    _pull_secret "DOCKER_TOKEN" "treescout-docker-token"
     _pull_secret "DB_ROOT_PASS" "treescout-db-root-pass" "required"
     _pull_secret "DB_PASS"      "treescout-db-pass"      "required"
     _pull_secret "ADMIN_PASS"   "treescout-admin-pass"   "required"
@@ -583,10 +584,16 @@ SERVICE_EOF
 docker_login_ghcr() {
     log_step "Authenticating Docker with GitHub Container Registry"
 
+    local login_token="${DOCKER_TOKEN:-${REPO_TOKEN:-}}"
+    if [ -z "$login_token" ]; then
+        log_warning "No DOCKER_TOKEN/REPO_TOKEN available for GHCR login — local source build fallback will be used."
+        return 1
+    fi
+
     # Some older Docker versions require a username matching the literal owner,
     # instead of the truncated token prefix which is standard for GH CR.
-    if echo "$REPO_TOKEN" | docker login ghcr.io -u "Scotchmcdonald" --password-stdin 2>/dev/null \
-        || echo "$REPO_TOKEN" | docker login ghcr.io -u "borealtek" --password-stdin; then
+    if echo "$login_token" | docker login ghcr.io -u "Scotchmcdonald" --password-stdin 2>/dev/null \
+        || echo "$login_token" | docker login ghcr.io -u "borealtek" --password-stdin; then
         log_success "Docker authenticated with ghcr.io"
         return 0
     fi
