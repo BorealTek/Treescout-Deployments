@@ -101,13 +101,15 @@ ADMIN_PASS_SECRET="treescout-admin-pass"
 #===============================================================================
 # SSL / TLS
 #===============================================================================
-# "false" = self-signed cert (generated at deploy time — browsers will warn)
-# "true"  = GCP Managed Certificate (requires Cloud Load Balancer + public domain)
-USE_MANAGED_SSL="false"
-# GCP_SSL_CERTIFICATE_NAME="treescout-ssl-cert"
+# Public HTTPS edge for gcp-server-init.sh (Caddy + Let's Encrypt).
+# Requires:
+#   - DOMAIN_NAME points to this VM public IP
+#   - Ports 80 and 443 reachable from the internet
+ENABLE_HTTPS="true"
 
-# Let's Encrypt email (only used when running certbot inside the app container)
-LETSENCRYPT_EMAIL=""
+# ACME contact email for certificate issuance/renewal.
+# If blank, ADMIN_EMAIL is used.
+TLS_EMAIL=""
 
 #===============================================================================
 # INTEGRATIONS  (optional)

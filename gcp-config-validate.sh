@@ -369,10 +369,11 @@ main() {
         log_note "Google OAuth not configured (optional)"
     fi
 
-    if validate_key "LETSENCRYPT_EMAIL"; then
-        log_note "Let's Encrypt email configured"
+    validate_boolean "ENABLE_HTTPS" "Enable HTTPS Edge"
+    if validate_key "TLS_EMAIL"; then
+        log_note "TLS email configured"
     else
-        log_note "Let's Encrypt not configured (default: self-signed certs)"
+        log_note "TLS email not set (fallback: ADMIN_EMAIL)"
     fi
     echo ""
 

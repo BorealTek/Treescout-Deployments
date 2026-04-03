@@ -87,6 +87,8 @@ GIT_BRANCH="laravel-11-foundation"
 MODULE_DIR_POLICY="replace" # skip|replace|abort|ask
 DEFAULT_INSTALL_DIR="/opt/treescout-docker"
 EXPOSE_PUBLIC_PORTS="true"
+ENABLE_HTTPS="true"
+TLS_EMAIL=""
 ENABLE_KROKI="false"
 ENABLE_GCP_LOGGING="false"
 
@@ -902,6 +904,8 @@ set_instance_metadata() {
     echo -n "$DB_NAME"              > "$tmpdir/ts-db-name"
     echo -n "$DB_HOST"              > "$tmpdir/ts-db-host"
     echo -n "$EXPOSE_PUBLIC_PORTS"  > "$tmpdir/ts-expose-public"
+    echo -n "$ENABLE_HTTPS"         > "$tmpdir/ts-enable-https"
+    echo -n "${TLS_EMAIL:-$ADMIN_EMAIL}" > "$tmpdir/ts-tls-email"
     echo -n "$GCP_FIREWALL_RULE_NAME" > "$tmpdir/ts-firewall-rule"
     echo -n "$ALLOWED_SOURCE_RANGES" > "$tmpdir/ts-allowed-ranges"
     echo -n "$GCP_NETWORK_TAG"      > "$tmpdir/ts-network-tag"
