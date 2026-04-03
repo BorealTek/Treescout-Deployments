@@ -187,7 +187,7 @@ load_config() {
             log_error "Config file not found: $CONFIG_FILE"
             exit 1
         fi
-        
+
         # Strip Windows line endings (CRLF -> LF) to prevent invisible bugs
         sed -i 's/\r$//' "$CONFIG_FILE" 2>/dev/null || true
 
@@ -865,7 +865,8 @@ _run_bootstrap_stdin() {
         ssh_args+=(--tunnel-through-iap)
     fi
 
-    gcloud "${ssh_args[@]}" -- 'sudo bash -s' < "$script_path"
+    # PowerShell doesn't support the '<' redirect operator naturally. Avoid literal `<`.
+    cat "$script_path" | gcloud "${ssh_args[@]}" -- 'sudo bash -s'
 }
 
 _diagnose_ssh_failure() {
@@ -976,8 +977,8 @@ offer_server_bootstrap() {
     log_info "The GCP VM is now fully configured via metadata."
     log_info "To deploy TreeScout, run gcp-server-init.sh on the VM:"
     echo ""
-    log_code "gcloud compute ssh $GCP_INSTANCE_NAME --zone=$GCP_ZONE \\"
-    log_code "  --project=$PROJECT_ID -- 'sudo bash -s' < /path/to/gcp-server-init.sh"
+    log_code "cat /path/to/gcp-server-init.sh | gcloud compute ssh $GCP_INSTANCE_NAME --zone=$GCP_ZONE \\"
+    log_code "  --project=$PROJECT_ID -- 'sudo bash -s'"
     echo ""
 
     if [ "$SKIP_DEPLOY" = true ]; then
