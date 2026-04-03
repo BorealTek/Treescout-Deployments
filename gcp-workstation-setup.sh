@@ -84,6 +84,7 @@ DB_NAME="treescout"
 DB_HOST="db"
 GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
 GIT_BRANCH="laravel-11-foundation"
+MODULE_DIR_POLICY="replace" # skip|replace|abort|ask
 DEFAULT_INSTALL_DIR="/opt/treescout-docker"
 EXPOSE_PUBLIC_PORTS="true"
 ENABLE_KROKI="false"
@@ -838,6 +839,35 @@ push_secrets() {
 set_instance_metadata() {
     log_step "Writing configuration to instance metadata"
 
+    if [ "$AUTO_APPROVE" != true ]; then
+        echo ""
+        echo -e "${CYAN}Module Folder Conflict Policy${NC}"
+        echo -e "  ${GREY}[r]${NC} replace existing folder (default)"
+        echo -e "  ${GREY}[s]${NC} skip existing folder"
+        echo -e "  ${GREY}[a]${NC} abort bootstrap if folder exists"
+        echo -e "  ${GREY}[k]${NC} ask on VM when interactive"
+        local policy_choice=""
+        read -r -p "  Choose policy [s/r/a/k] (Enter for current: $MODULE_DIR_POLICY): " policy_choice
+        case "${policy_choice,,}" in
+            "") ;;
+            s|skip) MODULE_DIR_POLICY="skip" ;;
+            r|replace) MODULE_DIR_POLICY="replace" ;;
+            a|abort) MODULE_DIR_POLICY="abort" ;;
+            k|ask) MODULE_DIR_POLICY="ask" ;;
+            *)
+                log_warning "Unknown choice '$policy_choice' — keeping '$MODULE_DIR_POLICY'."
+                ;;
+        esac
+    fi
+
+    case "${MODULE_DIR_POLICY,,}" in
+        skip|replace|abort|ask) ;;
+        *)
+            log_warning "Invalid MODULE_DIR_POLICY '$MODULE_DIR_POLICY' — defaulting to 'replace'."
+            MODULE_DIR_POLICY="replace"
+            ;;
+    esac
+
     if [ -z "$DOMAIN_NAME" ]; then
         log_error "DOMAIN_NAME is required but not set in secrets.conf"
         ERRORS=$(( ERRORS + 1 ))
@@ -865,6 +895,7 @@ set_instance_metadata() {
     echo -n "$ADMIN_LAST_NAME"      > "$tmpdir/ts-admin-last"
     echo -n "$GIT_REPO_URL"         > "$tmpdir/ts-git-repo"
     echo -n "$GIT_BRANCH"           > "$tmpdir/ts-git-branch"
+    echo -n "$MODULE_DIR_POLICY"    > "$tmpdir/ts-module-dir-policy"
     echo -n "$DEFAULT_INSTALL_DIR"  > "$tmpdir/ts-install-dir"
     echo -n "$DOCKER_SUBNET"        > "$tmpdir/ts-docker-subnet"
     echo -n "$DB_USER"              > "$tmpdir/ts-db-user"
@@ -915,6 +946,7 @@ set_instance_metadata() {
         log_success "Instance metadata updated (${meta_count} keys)"
         log_code "Domain:       $DOMAIN_NAME"
         log_code "Admin email:  $ADMIN_EMAIL"
+        log_code "Module policy: $MODULE_DIR_POLICY"
         [ -n "$AGENT_EMAIL" ]    && log_code "Agent email:  $AGENT_EMAIL" || true
         [ -n "$FINANCE_EMAIL" ]  && log_code "Finance email: $FINANCE_EMAIL" || true
         [ -n "$REPORTER_EMAIL" ] && log_code "Reporter email: $REPORTER_EMAIL" || true
@@ -1189,10 +1221,19 @@ offer_server_bootstrap() {
     if ! _run_bootstrap_stdin "$ssh_mode" "$server_init"; then
         log_error "Bootstrap command failed over ${ssh_mode} SSH."
         if [ "$ssh_mode" = "direct" ]; then
-            log_info "Retrying once via IAP tunnel..."
-            if _run_bootstrap_stdin "iap" "$server_init"; then
-                log_success "Bootstrap succeeded over IAP fallback."
-                return
+            local retry_iap="n"
+            if [ "$AUTO_APPROVE" != true ]; then
+                read -r -p "  Retry bootstrap over IAP tunnel? [y/N]: " retry_iap
+            else
+                log_info "AUTO_APPROVE mode: skipping automatic IAP retry."
+            fi
+
+            if [[ "${retry_iap:-n}" =~ ^[Yy]$ ]]; then
+                log_info "Retrying once via IAP tunnel..."
+                if _run_bootstrap_stdin "iap" "$server_init"; then
+                    log_success "Bootstrap succeeded over IAP fallback."
+                    return
+                fi
             fi
         fi
         log_error "Could not complete bootstrap over SSH."
