@@ -808,6 +808,7 @@ DB_HOST=${DB_HOST}
 DB_PORT=3306
 DB_NAME=${DB_NAME}
 DB_USER=${DB_USER}
+DB_PASS=${DB_PASS}
 DB_DATABASE=${DB_NAME}
 DB_USERNAME=${DB_USER}
 DB_PASSWORD=${DB_PASS}
@@ -1063,7 +1064,7 @@ deploy() {
 
     build_local_image
 
-    if ! docker compose -f docker-compose.prod.yml config; then
+    if ! docker compose -f docker-compose.prod.yml config >/dev/null; then
         log_error "Generated docker-compose.prod.yml is invalid"
         log_code "docker compose -f ${DEPLOY_DIR}/docker-compose.prod.yml config"
         exit 1
@@ -1081,12 +1082,18 @@ reconcile_database_credentials() {
 
     cd "$DEPLOY_DIR"
 
-    local sql
-    sql=$(cat <<'SQL'
-CREATE DATABASE IF NOT EXISTS `${MARIADB_DATABASE}`;
-CREATE USER IF NOT EXISTS '${MARIADB_USER}'@'%' IDENTIFIED BY '${MARIADB_PASSWORD}';
-ALTER USER '${MARIADB_USER}'@'%' IDENTIFIED BY '${MARIADB_PASSWORD}';
-GRANT ALL PRIVILEGES ON `${MARIADB_DATABASE}`.* TO '${MARIADB_USER}'@'%';
+    local sql_db_name="$DB_NAME"
+    local sql_user="$DB_USER"
+    local sql_password="$DB_PASS"
+    local sql_db_name_escaped sql_user_escaped sql_password_escaped sql
+    sql_db_name_escaped=${sql_db_name//\`/}
+    sql_user_escaped=${sql_user//\'/\'\'}
+    sql_password_escaped=${sql_password//\'/\'\'}
+    sql=$(cat <<SQL
+CREATE DATABASE IF NOT EXISTS \`${sql_db_name_escaped}\`;
+CREATE USER IF NOT EXISTS '${sql_user_escaped}'@'%' IDENTIFIED BY '${sql_password_escaped}';
+ALTER USER '${sql_user_escaped}'@'%' IDENTIFIED BY '${sql_password_escaped}';
+GRANT ALL PRIVILEGES ON \`${sql_db_name_escaped}\`.* TO '${sql_user_escaped}'@'%';
 FLUSH PRIVILEGES;
 SQL
 )
@@ -1106,10 +1113,8 @@ SQL
     # Try root auth with configured password first, then local-socket root auth.
     if docker compose -f docker-compose.prod.yml exec -T db sh -lc \
         'mysql -uroot -p"$MARIADB_ROOT_PASSWORD" -Nse "SELECT 1" >/dev/null 2>&1'; then
-        if docker compose -f docker-compose.prod.yml exec -T db sh -lc \
-            "mysql -uroot -p\"\$MARIADB_ROOT_PASSWORD\" <<'SQL'
-$sql
-SQL"; then
+        if printf '%s\n' "$sql" | docker compose -f docker-compose.prod.yml exec -T db sh -lc \
+            'mysql -uroot -p"$MARIADB_ROOT_PASSWORD"'; then
             log_success "Database user/database grants reconciled (root password auth)"
             return
         fi
@@ -1117,10 +1122,8 @@ SQL"; then
 
     if docker compose -f docker-compose.prod.yml exec -T db sh -lc \
         'mysql -uroot -Nse "SELECT 1" >/dev/null 2>&1'; then
-        if docker compose -f docker-compose.prod.yml exec -T db sh -lc \
-            "mysql -uroot <<'SQL'
-$sql
-SQL"; then
+        if printf '%s\n' "$sql" | docker compose -f docker-compose.prod.yml exec -T db sh -lc \
+            'mysql -uroot'; then
             log_success "Database user/database grants reconciled (root socket auth)"
             return
         fi
