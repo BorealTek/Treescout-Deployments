@@ -93,6 +93,7 @@ ADMIN_FIRST_NAME="System"
 ADMIN_LAST_NAME="Administrator"
 
 # Secrets (pushed to Secret Manager)
+APP_KEY=""
 REPO_TOKEN=""
 DB_ROOT_PASS=""
 DB_PASS=""
@@ -648,6 +649,13 @@ _push_if_set() {
 push_secrets() {
     log_step "Pushing secrets to GCP Secret Manager"
 
+    # Auto-generate APP_KEY if not provided
+    if [ -z "$APP_KEY" ]; then
+        APP_KEY="base64:$(openssl rand -base64 32)"
+        log_info "Auto-generated Laravel APP_KEY"
+    fi
+
+    _push_if_set "Laravel App Key"                      "treescout-app-key"                            "${APP_KEY:-}"                                 "required"
     _push_if_set "GitHub PAT (REPO_TOKEN)"              "treescout-repo-token"                         "${REPO_TOKEN:-}"                              "required"
     _push_if_set "Database root password"               "treescout-db-root-pass"                       "${DB_ROOT_PASS:-}"                            "required"
     _push_if_set "Database app-user password"           "treescout-db-pass"                            "${DB_PASS:-}"                                 "required"
@@ -777,7 +785,7 @@ verify_secrets() {
     log_step "Verifying required secrets are readable"
 
     local all_ok=true
-    for secret in treescout-repo-token treescout-db-root-pass treescout-db-pass treescout-admin-pass; do
+    for secret in treescout-app-key treescout-repo-token treescout-db-root-pass treescout-db-pass treescout-admin-pass; do
         if gcloud secrets versions access latest --secret="$secret" --project="$PROJECT_ID" >/dev/null 2>&1; then
             log_success "Readable: $secret"
         else
