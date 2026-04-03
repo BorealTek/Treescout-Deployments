@@ -580,8 +580,10 @@ SERVICE_EOF
 docker_login_ghcr() {
     log_step "Authenticating Docker with GitHub Container Registry"
 
-    echo "$REPO_TOKEN" | docker login ghcr.io -u "$(echo "$REPO_TOKEN" | cut -c1-4)..." --password-stdin 2>/dev/null \
-        || echo "$REPO_TOKEN" | docker login ghcr.io --username=borealtek --password-stdin
+    # Some older Docker versions require a username matching the literal owner, 
+    # instead of the truncated token prefix which is standard for GH CR.
+    echo "$REPO_TOKEN" | docker login ghcr.io -u "Scotchmcdonald" --password-stdin 2>/dev/null \
+        || echo "$REPO_TOKEN" | docker login ghcr.io -u "borealtek" --password-stdin
 
     log_success "Docker authenticated with ghcr.io"
 }
