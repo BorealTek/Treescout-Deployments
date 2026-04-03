@@ -58,6 +58,80 @@ log_error()   { echo -e "${RED}✖${NC} $*" >&2; }
 log_step()    { echo ""; echo -e "${MAGENTA}━━━ ${BLUE}$*${NC}"; }
 log_code()    { echo -e "${GREY}  ↳ $*${NC}"; }
 
+sanitize_remote_url() {
+    local repo_dir="$1" safe_url="$2"
+
+    if [ -d "${repo_dir}/.git" ]; then
+        git -C "$repo_dir" remote set-url origin "$safe_url" >/dev/null 2>&1 || true
+    fi
+}
+
+refresh_git_checkout() {
+    local repo_url="$1" branch="$2" checkout_dir="$3" clean_exclude="${4:-}"
+
+    if [ -d "${checkout_dir}/.git" ]; then
+        git -C "$checkout_dir" remote set-url origin "$repo_url"
+        git -C "$checkout_dir" fetch --depth=1 origin "$branch" -q
+        git -C "$checkout_dir" checkout -B "$branch" FETCH_HEAD -q
+        git -C "$checkout_dir" reset --hard FETCH_HEAD -q
+
+        if [ -n "$clean_exclude" ]; then
+            git -C "$checkout_dir" clean -fdx -e "$clean_exclude" -q
+        else
+            git -C "$checkout_dir" clean -fdx -q
+        fi
+
+        return
+    fi
+
+    rm -rf "$checkout_dir"
+    git clone --depth=1 --branch "$branch" "$repo_url" "$checkout_dir" -q
+}
+
+prepare_remote_build_manifests() {
+    local src_dir="$1"
+    local manifest_root="${src_dir}/.docker-manifests/Modules"
+
+    rm -rf "${src_dir}/.docker-manifests"
+    mkdir -p "$manifest_root"
+
+    while IFS= read -r composer_file; do
+        [ -z "$composer_file" ] && continue
+
+        local module_name
+        module_name=$(basename "$(dirname "$composer_file")")
+
+        mkdir -p "${manifest_root}/${module_name}"
+        cp "$composer_file" "${manifest_root}/${module_name}/composer.json"
+    done < <(find "${src_dir}/Modules" -mindepth 2 -maxdepth 2 -name composer.json -print 2>/dev/null | sort)
+}
+
+build_remote_base_image() {
+    local src_dir="$1"
+    local base_dockerfile="${src_dir}/Dockerfile.prod-base"
+    local base_hash
+    local stable_base_image="treescout-local:php83-prod-base"
+
+    base_hash=$(sha256sum "$base_dockerfile" | awk '{print substr($1,1,12)}')
+    APP_BASE_IMAGE="treescout-local:php83-prod-base-${base_hash}"
+
+    if docker image inspect "$APP_BASE_IMAGE" >/dev/null 2>&1; then
+        docker tag "$APP_BASE_IMAGE" "$stable_base_image"
+        log_success "Reusing cached PHP base image: ${APP_BASE_IMAGE}"
+        return
+    fi
+
+    log_info "Building PHP base image: ${APP_BASE_IMAGE}"
+    docker build \
+        -f "$base_dockerfile" \
+        -t "$APP_BASE_IMAGE" \
+        "$src_dir"
+
+    docker tag "$APP_BASE_IMAGE" "$stable_base_image"
+
+    log_success "PHP base image ready: ${APP_BASE_IMAGE}"
+}
+
 # ==============================================================================
 # RUNTIME STATE
 # ==============================================================================
@@ -70,6 +144,7 @@ GCE_TOKEN=""
 DEPLOY_DIR="/opt/treescout"
 TREESCOUT_PROFILE="full"
 APP_IMAGE="treescout-local:${TREESCOUT_PROFILE}-latest"
+APP_BASE_IMAGE=""
 BUILD_DIR="/opt/treescout-build"
 
 # Config from instance metadata
@@ -828,15 +903,17 @@ build_local_image() {
     log_step "Building local application image from git source"
 
     local src_dir="${BUILD_DIR}/src"
-    rm -rf "$src_dir"
+    local module_cache_dir="${BUILD_DIR}/module-cache"
     mkdir -p "$BUILD_DIR"
+    mkdir -p "$module_cache_dir"
 
     log_info "Cloning app source (${GIT_BRANCH})..."
     local app_clone_url="$GIT_REPO_URL"
     if [[ "$GIT_REPO_URL" == https://github.com/* ]]; then
         app_clone_url="https://oauth2:${REPO_TOKEN}@${GIT_REPO_URL#https://}"
     fi
-    git clone --depth=1 --branch "$GIT_BRANCH" "$app_clone_url" "$src_dir"
+    refresh_git_checkout "$app_clone_url" "$GIT_BRANCH" "$src_dir" "Modules/"
+    sanitize_remote_url "$src_dir" "$GIT_REPO_URL"
 
     local manifest_path="${src_dir}/deployment/modules.manifest.json"
     local manifest_alt_path="${src_dir}/modules.manifest.json"
@@ -873,6 +950,7 @@ build_local_image() {
         repo=$(jq -r --arg m "$module" '.modules[$m].repo // empty' "$manifest_path")
         branch=$(jq -r --arg m "$module" '.modules[$m].branch // "main"' "$manifest_path")
         local module_dir="${src_dir}/Modules/${module}"
+        local module_cache_repo="${module_cache_dir}/${module}"
         local had_existing=false
         local policy="${MODULE_DIR_POLICY,,}"
 
@@ -924,9 +1002,10 @@ build_local_image() {
             clone_target="$temp_module_dir"
         fi
 
-        if ! git clone --depth=1 --branch "$branch" \
+        if ! refresh_git_checkout \
             "https://oauth2:${REPO_TOKEN}@${repo#https://}" \
-            "$clone_target" -q; then
+            "$branch" \
+            "$module_cache_repo"; then
             if [ -n "$temp_module_dir" ] && [ -d "$module_dir" ]; then
                 log_warning "Clone failed for $module; keeping existing module directory."
                 rm -rf "$temp_module_dir"
@@ -936,6 +1015,12 @@ build_local_image() {
             exit 1
         fi
 
+        sanitize_remote_url "$module_cache_repo" "$repo"
+
+        rm -rf "$clone_target"
+        mkdir -p "$clone_target"
+        cp -a "${module_cache_repo}/." "$clone_target/"
+
         if [ -n "$temp_module_dir" ]; then
             rm -rf "$module_dir"
             mv "$temp_module_dir" "$module_dir"
@@ -944,18 +1029,18 @@ build_local_image() {
         rm -rf "${module_dir}/.git"
     done <<< "$modules"
 
+    prepare_remote_build_manifests "$src_dir"
+    build_remote_base_image "$src_dir"
+
     local vcs_ref
     vcs_ref=$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || echo "local")
     local build_date
     build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # Avoid leaking token-bearing git remotes or history into the Docker build context.
-    rm -rf "${src_dir}/.git"
-
     APP_IMAGE="treescout-local:${TREESCOUT_PROFILE}-latest"
     log_info "Building Docker image: ${APP_IMAGE}"
     docker build \
-        -f "${src_dir}/Dockerfile.prod" \
+        -f "${src_dir}/Dockerfile.remote.prod" \
         -t "${APP_IMAGE}" \
         --build-arg "PROFILE=${TREESCOUT_PROFILE}" \
         --build-arg "BUILD_DATE=${build_date}" \
