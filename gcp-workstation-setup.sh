@@ -48,6 +48,8 @@ readonly BLUE='\033[38;5;27m'
 readonly MAGENTA='\033[38;5;201m'
 readonly GREY='\033[38;5;240m'
 readonly NC='\033[0m'
+readonly FOREST='\033[38;5;22m'
+readonly COLOR_DIM="$GREY"
 
 log_info()    { echo -e "${CYAN}ℹ ${NC} $*"; }
 log_success() { echo -e "${GREEN}✔${NC} $*"; }
@@ -65,6 +67,7 @@ CONFIG_FILE=""
 AUTO_APPROVE=false
 SKIP_DEPLOY=false
 ERRORS=0
+START_SECTION="full"
 
 # Defaults (overridden by secrets.conf)
 GCP_ZONE="us-central1-a"
@@ -137,6 +140,7 @@ for arg in "$@"; do
     case "$arg" in
         --from-file=*) CONFIG_FILE="${arg#--from-file=}" ;;
         --project=*)   PROJECT_ID="${arg#--project=}" ;;
+        --start-at=*)  START_SECTION="${arg#--start-at=}" ;;
         --yes|-y)      AUTO_APPROVE=true ;;
         --skip-deploy) SKIP_DEPLOY=true ;;
         -h|--help)
@@ -167,13 +171,150 @@ fi
 show_banner() {
     clear 2>/dev/null || true
     echo ""
-    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║    TreeScout  —  GCP Workstation Setup & Assertion Tool      ║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${FOREST}       # #### ####${NC}"
+    echo -e "${FOREST}     ### \\/#|### |/####${NC}"
+    echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}      ${CYAN}  ____                        _ _______   _          ${NC}"
+    echo -e "${FOREST}  ###  \\/###|/ \\/ # ###${NC}        ${CYAN} |  _ \\                      | |__   __| | |        ${NC}"
+    echo -e "${FOREST} ##_\\_#\\_\\## | #/###_/_####${NC}   ${CYAN}  | |_) | ___   _ __.__  ___  | |  | |  __| | __     ${NC}"
+    echo -e "${FOREST}## #### # \\ #| /  #### ##/##${NC}    ${CYAN}|  _ < / _ \\| '__/ _ \\/ _ \\\`| |  | |/ _ \\ |/ /     ${NC}"
+    echo -e "${FOREST} __#_--###\`  |{,###---###-~${NC}     ${CYAN}| |_) | (_) | |  | __/ (_| || |  | || __/   <        ${NC}"
+    echo -e "${FOREST}           \\ }{${NC}                 ${CYAN}|____/ \\___/|_|  \\___|\\__,_||_|  |_|\\___|_|\\_\\ ${NC}"
+    echo -e "${FOREST}            }}{${NC}"
+    echo -e "${FOREST}            }}{${NC}             ${GREEN} T R E E S C O U T   G C P   W O R K S T A T I O N ${NC}"
+    echo -e "${FOREST}            }}{${NC}"
+    echo -e "${FOREST}      , -=-~{ .-^- _${NC}"
+    echo -e "${FOREST}            \`${NC}"
     if [ -n "$CONFIG_FILE" ]; then
         echo -e "   Config: ${GREY}$CONFIG_FILE${NC}"
     fi
+    echo -e "${COLOR_DIM}────────────────────────────────────────────────────────────────────────${NC}"
     echo ""
+}
+
+normalize_start_section() {
+    case "$START_SECTION" in
+        0|full|all|run) START_SECTION="full" ;;
+        1|project|config|prereqs) START_SECTION="prereqs" ;;
+        2|apis) START_SECTION="apis" ;;
+        3|instance) START_SECTION="instance" ;;
+        4|iam) START_SECTION="iam" ;;
+        5|firewall) START_SECTION="firewall" ;;
+        6|secrets) START_SECTION="secrets" ;;
+        7|metadata) START_SECTION="metadata" ;;
+        8|verify|verify-secrets) START_SECTION="verify" ;;
+        9|bootstrap|deploy) START_SECTION="bootstrap" ;;
+        *)
+            log_warning "Unknown --start-at target '$START_SECTION' — defaulting to full run."
+            START_SECTION="full"
+            ;;
+    esac
+}
+
+prompt_start_section() {
+    normalize_start_section
+
+    if [ "$AUTO_APPROVE" = true ]; then
+        return
+    fi
+
+    echo -e "${CYAN}Start Options${NC}"
+    echo -e "  ${GREY}[0]${NC} Full run"
+    echo -e "  ${GREY}[1]${NC} Jump to config + auth"
+    echo -e "  ${GREY}[2]${NC} Jump to API enablement"
+    echo -e "  ${GREY}[3]${NC} Jump to instance assertion"
+    echo -e "  ${GREY}[4]${NC} Jump to IAM grant"
+    echo -e "  ${GREY}[5]${NC} Jump to firewall checks"
+    echo -e "  ${GREY}[6]${NC} Jump to secrets push"
+    echo -e "  ${GREY}[7]${NC} Jump to metadata write"
+    echo -e "  ${GREY}[8]${NC} Jump to secret verification"
+    echo -e "  ${GREY}[9]${NC} Jump to bootstrap only"
+    echo ""
+
+    local choice=""
+    read -r -p "  Select start section [0-9] (Enter for full run): " choice
+    [ -z "$choice" ] && choice="0"
+    START_SECTION="$choice"
+    normalize_start_section
+}
+
+run_selected_sections() {
+    case "$START_SECTION" in
+        full)
+            enable_apis
+            assert_or_create_instance
+            grant_iam_role
+            assert_firewall_rule
+            push_secrets
+            set_instance_metadata
+            verify_secrets
+            show_summary
+            offer_server_bootstrap
+            ;;
+        prereqs)
+            show_summary
+            offer_server_bootstrap
+            ;;
+        apis)
+            enable_apis
+            assert_or_create_instance
+            grant_iam_role
+            assert_firewall_rule
+            push_secrets
+            set_instance_metadata
+            verify_secrets
+            show_summary
+            offer_server_bootstrap
+            ;;
+        instance)
+            assert_or_create_instance
+            grant_iam_role
+            assert_firewall_rule
+            push_secrets
+            set_instance_metadata
+            verify_secrets
+            show_summary
+            offer_server_bootstrap
+            ;;
+        iam)
+            grant_iam_role
+            assert_firewall_rule
+            push_secrets
+            set_instance_metadata
+            verify_secrets
+            show_summary
+            offer_server_bootstrap
+            ;;
+        firewall)
+            assert_firewall_rule
+            push_secrets
+            set_instance_metadata
+            verify_secrets
+            show_summary
+            offer_server_bootstrap
+            ;;
+        secrets)
+            push_secrets
+            set_instance_metadata
+            verify_secrets
+            show_summary
+            offer_server_bootstrap
+            ;;
+        metadata)
+            set_instance_metadata
+            verify_secrets
+            show_summary
+            offer_server_bootstrap
+            ;;
+        verify)
+            verify_secrets
+            show_summary
+            offer_server_bootstrap
+            ;;
+        bootstrap)
+            show_summary
+            offer_server_bootstrap
+            ;;
+    esac
 }
 
 # ==============================================================================
@@ -1090,17 +1231,10 @@ show_summary() {
 
 main() {
     show_banner
+    prompt_start_section
     load_config
     check_prereqs
-    enable_apis
-    assert_or_create_instance
-    grant_iam_role
-    assert_firewall_rule
-    push_secrets
-    set_instance_metadata
-    verify_secrets
-    show_summary
-    offer_server_bootstrap
+    run_selected_sections
 }
 
 main "$@"
