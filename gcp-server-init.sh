@@ -1076,6 +1076,59 @@ deploy() {
     log_code "$(docker compose -f docker-compose.prod.yml ps --format 'table {{.Name}}\t{{.Status}}' 2>/dev/null || true)"
 }
 
+reconcile_database_credentials() {
+    log_step "Reconciling database credentials"
+
+    cd "$DEPLOY_DIR"
+
+    local sql
+    sql=$(cat <<'SQL'
+CREATE DATABASE IF NOT EXISTS `${MARIADB_DATABASE}`;
+CREATE USER IF NOT EXISTS '${MARIADB_USER}'@'%' IDENTIFIED BY '${MARIADB_PASSWORD}';
+ALTER USER '${MARIADB_USER}'@'%' IDENTIFIED BY '${MARIADB_PASSWORD}';
+GRANT ALL PRIVILEGES ON `${MARIADB_DATABASE}`.* TO '${MARIADB_USER}'@'%';
+FLUSH PRIVILEGES;
+SQL
+)
+
+    local attempts=0
+    until docker compose -f docker-compose.prod.yml exec -T db \
+            sh -lc 'mysqladmin ping --silent' >/dev/null 2>&1; do
+        attempts=$(( attempts + 1 ))
+        if [ "$attempts" -ge 24 ]; then
+            log_warning "Database service did not become ready in time; continuing without credential reconciliation."
+            return
+        fi
+        log_info "Waiting for database service... (${attempts}/24)"
+        sleep 5
+    done
+
+    # Try root auth with configured password first, then local-socket root auth.
+    if docker compose -f docker-compose.prod.yml exec -T db sh -lc \
+        'mysql -uroot -p"$MARIADB_ROOT_PASSWORD" -Nse "SELECT 1" >/dev/null 2>&1'; then
+        if docker compose -f docker-compose.prod.yml exec -T db sh -lc \
+            "mysql -uroot -p\"\$MARIADB_ROOT_PASSWORD\" <<'SQL'
+$sql
+SQL"; then
+            log_success "Database user/database grants reconciled (root password auth)"
+            return
+        fi
+    fi
+
+    if docker compose -f docker-compose.prod.yml exec -T db sh -lc \
+        'mysql -uroot -Nse "SELECT 1" >/dev/null 2>&1'; then
+        if docker compose -f docker-compose.prod.yml exec -T db sh -lc \
+            "mysql -uroot <<'SQL'
+$sql
+SQL"; then
+            log_success "Database user/database grants reconciled (root socket auth)"
+            return
+        fi
+    fi
+
+    log_warning "Could not reconcile DB credentials as root; migration may fail if an existing DB volume has stale credentials."
+}
+
 # ==============================================================================
 # STEP 9 — Post-deploy: migrations + summary
 # ==============================================================================
@@ -1084,6 +1137,8 @@ post_deploy() {
     log_step "Running database migrations"
 
     cd "$DEPLOY_DIR"
+
+    reconcile_database_credentials
 
     # Wait for app to become healthy (up to 90s)
     local attempts=0
