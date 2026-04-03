@@ -640,7 +640,7 @@ services:
       start_period: 60s
 
   queue:
-        image: ${APP_IMAGE}
+    image: ${APP_IMAGE}
     container_name: treescout-queue
     restart: always
     command: php artisan queue:work --queue=emails,default,long-running --sleep=3 --tries=3 --max-time=3600
@@ -670,7 +670,7 @@ services:
       - treescout-net
 
   reverb:
-        image: ${APP_IMAGE}
+    image: ${APP_IMAGE}
     container_name: treescout-reverb
     restart: unless-stopped
     command: php artisan reverb:start --host=0.0.0.0 --port=8081
@@ -926,7 +926,7 @@ deploy() {
     APP_IMAGE="ghcr.io/borealtek/treescout:${TREESCOUT_PROFILE}-latest"
     sed -i "s#^APP_IMAGE=.*#APP_IMAGE=${APP_IMAGE}#" "${DEPLOY_DIR}/.env"
 
-    if ! docker compose -f docker-compose.prod.yml config >/dev/null 2>&1; then
+    if ! docker compose -f docker-compose.prod.yml config; then
         log_error "Generated docker-compose.prod.yml is invalid"
         log_code "docker compose -f ${DEPLOY_DIR}/docker-compose.prod.yml config"
         exit 1
