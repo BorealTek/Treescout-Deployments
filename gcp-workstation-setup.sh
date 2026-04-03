@@ -187,6 +187,10 @@ load_config() {
             log_error "Config file not found: $CONFIG_FILE"
             exit 1
         fi
+        
+        # Strip Windows line endings (CRLF -> LF) to prevent invisible bugs
+        sed -i 's/\r$//' "$CONFIG_FILE" 2>/dev/null || true
+
         # shellcheck disable=SC1090
         source "$CONFIG_FILE"
         log_success "Loaded: $CONFIG_FILE"
