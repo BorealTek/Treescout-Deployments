@@ -122,12 +122,6 @@
       "branch": "main",
       "private": true,
       "description": "Manages client deployment records, OTACs, and Git provider token issuance for TreeScout module deployments"
-    },
-    "MiddleMan": {
-      "repo": "https://github.com/BorealTek/Treescout-MiddleMan.git",
-      "branch": "main",
-      "private": true,
-      "description": "Operator control plane for Laravel events: observe, intercept, mutate, replay, trace"
     }
   },
   "profiles": {
@@ -149,8 +143,7 @@
         "DevFeedback",
         "EmailMigration",
         "CaseManager",
-        "DeploymentManager",
-        "MiddleMan"
+        "DeploymentManager"
       ]
     },
     "core-msp": {
