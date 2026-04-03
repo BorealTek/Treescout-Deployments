@@ -1191,7 +1191,7 @@ offer_server_bootstrap() {
         log_info "Option B: Stream it directly from GitHub now (requires curl on the VM)."
         echo ""
 
-        local do_stream="n"
+        local do_stream="y"
         if [ "$AUTO_APPROVE" != true ]; then
             read -r -p "  Stream gcp-server-init.sh from GitHub and run it on the VM now? [y/N]: " do_stream
         fi
@@ -1210,7 +1210,7 @@ offer_server_bootstrap() {
         return
     fi
 
-    local do_ssh="n"
+    local do_ssh="y"
     if [ "$AUTO_APPROVE" != true ]; then
         read -r -p "  SSH into $GCP_INSTANCE_NAME and run the bootstrap now? [y/N]: " do_ssh
     fi

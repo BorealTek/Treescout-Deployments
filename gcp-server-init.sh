@@ -947,6 +947,9 @@ build_local_image() {
     local build_date
     build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+    # Avoid leaking token-bearing git remotes or history into the Docker build context.
+    rm -rf "${src_dir}/.git"
+
     APP_IMAGE="treescout-local:${TREESCOUT_PROFILE}-latest"
     log_info "Building Docker image: ${APP_IMAGE}"
     docker build \

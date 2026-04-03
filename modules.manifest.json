@@ -87,12 +87,6 @@
       "private": true,
       "description": "Notification and alert subscription rules"
     },
-    "AppHealth": {
-      "repo": "https://github.com/BorealTek/AppHealth-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Application health checks, operational diagnostics, and status surfaces"
-    },
     "Action1": {
       "repo": "https://github.com/BorealTek/Action1-Module.git",
       "branch": "main",
@@ -150,7 +144,6 @@
         "KnowledgeBase",
         "GoogleAdmin",
         "Alerts",
-        "AppHealth",
         "Action1",
         "WidgetRegistry",
         "DevFeedback",
