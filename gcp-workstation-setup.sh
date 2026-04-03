@@ -987,7 +987,13 @@ offer_server_bootstrap() {
     fi
 
     local ssh_mode
-    if ! ssh_mode=$(_select_ssh_mode); then
+    if ! ssh_mode=$(_select_ssh_mode | tail -n1); then
+        ERRORS=$(( ERRORS + 1 ))
+        return
+    fi
+
+    if [ "$ssh_mode" != "iap" ] && [ "$ssh_mode" != "direct" ]; then
+        log_error "Could not determine SSH mode (got: '$ssh_mode')."
         ERRORS=$(( ERRORS + 1 ))
         return
     fi

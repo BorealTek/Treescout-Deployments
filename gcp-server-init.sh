@@ -841,6 +841,21 @@ build_local_image() {
     git clone --depth=1 --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$src_dir"
 
     local manifest_path="${src_dir}/deployment/modules.manifest.json"
+    local manifest_alt_path="${src_dir}/modules.manifest.json"
+
+    # The deployment manifest may live in a git submodule in the app repo.
+    # Attempt to initialize it before failing the fallback build.
+    if [ ! -f "$manifest_path" ]; then
+        if [ -f "${src_dir}/.gitmodules" ]; then
+            git -C "$src_dir" config --global url."https://oauth2:${REPO_TOKEN}@github.com/".insteadOf "https://github.com/" || true
+            git -C "$src_dir" submodule sync -- deployment 2>/dev/null || true
+            git -C "$src_dir" submodule update --init --depth 1 deployment 2>/dev/null || true
+        fi
+    fi
+
+    if [ -f "$manifest_alt_path" ]; then
+        manifest_path="$manifest_alt_path"
+    fi
     if [ ! -f "$manifest_path" ]; then
         log_error "Module manifest not found: $manifest_path"
         exit 1
@@ -903,6 +918,12 @@ deploy() {
 
     APP_IMAGE="ghcr.io/borealtek/treescout:${TREESCOUT_PROFILE}-latest"
     sed -i "s#^APP_IMAGE=.*#APP_IMAGE=${APP_IMAGE}#" "${DEPLOY_DIR}/.env"
+
+    if ! docker compose -f docker-compose.prod.yml config >/dev/null 2>&1; then
+        log_error "Generated docker-compose.prod.yml is invalid"
+        log_code "docker compose -f ${DEPLOY_DIR}/docker-compose.prod.yml config"
+        exit 1
+    fi
 
     log_info "Pulling image: ${APP_IMAGE}"
     if ! docker compose -f docker-compose.prod.yml pull; then
