@@ -1156,6 +1156,8 @@ deploy() {
     if ! docker compose -f docker-compose.prod.yml config >/dev/null; then
         log_error "Generated docker-compose.prod.yml is invalid"
         log_code "docker compose -f ${DEPLOY_DIR}/docker-compose.prod.yml config"
+        log_info "First 120 lines of generated compose for debugging:"
+        nl -ba docker-compose.prod.yml | sed -n '1,120p' || true
         exit 1
     fi
 
