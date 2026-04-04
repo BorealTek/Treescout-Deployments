@@ -697,6 +697,12 @@ write_app_files() {
     local compose_profiles=""
     local tls_email="${TLS_EMAIL:-$ADMIN_EMAIL}"
     local enable_https_runtime="false"
+    local source_repo=""
+
+    if [[ "$GIT_REPO_URL" == https://github.com/* ]]; then
+        source_repo="${GIT_REPO_URL#https://github.com/}"
+        source_repo="${source_repo%.git}"
+    fi
 
     case "${EXPOSE_PUBLIC_PORTS,,}" in
         true|1|yes|y|public)
@@ -883,6 +889,9 @@ APP_DEBUG=false
 APP_KEY=${APP_KEY}
 APP_URL=https://${DOMAIN_NAME}
 GOOGLE_REDIRECT_URI=https://${DOMAIN_NAME}/auth/google/callback
+APP_SOURCE_REPO=${source_repo}
+APP_SOURCE_BRANCH=${GIT_BRANCH}
+APP_BUILD_COMMIT=unknown
 
 LOG_CHANNEL=stack
 LOG_LEVEL=warning
@@ -1133,6 +1142,8 @@ build_local_image() {
 
     local vcs_ref
     vcs_ref=$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || echo "local")
+    local vcs_ref_full
+    vcs_ref_full=$(git -C "$src_dir" rev-parse HEAD 2>/dev/null || echo "unknown")
     local build_date
     build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -1148,6 +1159,7 @@ build_local_image() {
 
     # Keep compose substitution in sync after fallback image selection.
     sed -i "s#^APP_IMAGE=.*#APP_IMAGE=${APP_IMAGE}#" "${DEPLOY_DIR}/.env"
+    sed -i "s#^APP_BUILD_COMMIT=.*#APP_BUILD_COMMIT=${vcs_ref_full}#" "${DEPLOY_DIR}/.env"
     log_success "Local image built: ${APP_IMAGE}"
 }
 
