@@ -22,11 +22,11 @@
 #
 #   Option B — pipe over SSH:
 #     gcloud compute ssh treescout-prod --zone=us-central1-a \
-#       --project=YOUR_PROJECT -- 'sudo bash -s' < deployment/gcp-server-init.sh
+#       --project=YOUR_PROJECT -- 'sudo bash -s' < deployment/gcp/gcp-server-init.sh
 #
 #   Option C — stream directly from GitHub:
 #     gcloud compute ssh treescout-prod --zone=us-central1-a -- \
-#       "curl -fsSL 'https://raw.githubusercontent.com/Scotchmcdonald/freescout/laravel-11-foundation/deployment/gcp-server-init.sh' | sudo bash"
+#       "curl -fsSL 'https://raw.githubusercontent.com/BorealTek/Treescout-Core/laravel-11-foundation/deployment/gcp/gcp-server-init.sh' | sudo bash"
 #
 # REQUIREMENTS:
 #   - GCP Compute Engine VM, Debian 12+
@@ -175,7 +175,7 @@ ENABLE_HTTPS="true"
 TLS_EMAIL=""
 ENABLE_KROKI="false"
 ENABLE_GCP_LOGGING="false"
-GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
+GIT_REPO_URL="https://github.com/BorealTek/Treescout-Core.git"
 GIT_BRANCH="laravel-11-foundation"
 MODULE_DIR_POLICY="${MODULE_DIR_POLICY:-replace}"  # ask|skip|replace|abort
 EDGE_TLS_ENABLED="false"
@@ -656,7 +656,7 @@ UPDATER_EOF
     cat > /etc/systemd/system/treescout-dns.service <<'SERVICE_EOF'
 [Unit]
 Description=Update GoDaddy DNS A record with current external IP
-Documentation=https://github.com/Scotchmcdonald/freescout
+Documentation=https://github.com/BorealTek/Treescout-Core
 After=network-online.target
 Wants=network-online.target
 
@@ -1023,7 +1023,7 @@ build_local_image() {
     refresh_git_checkout "$app_clone_url" "$GIT_BRANCH" "$src_dir" "Modules/"
     sanitize_remote_url "$src_dir" "$GIT_REPO_URL"
 
-    local manifest_path="${src_dir}/deployment/modules.manifest.json"
+    local manifest_path="${src_dir}/deployment/linux/modules.manifest.json"
     local manifest_alt_path="${src_dir}/modules.manifest.json"
 
     # The deployment manifest may live in a git submodule in the app repo.

@@ -6,17 +6,17 @@
 # Run this ONCE before deploying, from any machine with gcloud authenticated.
 #
 # Usage:
-#   bash deployment/gcp-secrets-bootstrap.sh [--project=PROJECT_ID]
+#   bash deployment/gcp/gcp-secrets-bootstrap.sh [--project=PROJECT_ID]
 #
 #   Interactive wizard (default):
-#     bash deployment/gcp-secrets-bootstrap.sh
+#     bash deployment/gcp/gcp-secrets-bootstrap.sh
 #
 #   Generate a config file template to fill in offline:
-#     bash deployment/gcp-secrets-bootstrap.sh --create-config
-#     bash deployment/gcp-secrets-bootstrap.sh --create-config=/path/to/secrets.conf
+#     bash deployment/gcp/gcp-secrets-bootstrap.sh --create-config
+#     bash deployment/gcp/gcp-secrets-bootstrap.sh --create-config=/path/to/secrets.conf
 #
 #   Populate secrets non-interactively from a filled-in config file:
-#     bash deployment/gcp-secrets-bootstrap.sh --from-file=secrets.conf
+#     bash deployment/gcp/gcp-secrets-bootstrap.sh --from-file=secrets.conf
 #
 # Config file format:
 #   KEY="value"   (shell variable assignments — sourced directly)
@@ -61,7 +61,7 @@ for arg in "$@"; do
         --create-config=*)      MODE="create-config"; CONFIG_FILE="${arg#--create-config=}" ;;
         --from-file=*)          MODE="from-file";     CONFIG_FILE="${arg#--from-file=}" ;;
         -h|--help)
-            echo "Usage: bash deployment/gcp-secrets-bootstrap.sh [OPTIONS]"
+            echo "Usage: bash deployment/gcp/gcp-secrets-bootstrap.sh [OPTIONS]"
             echo ""
             echo "  (no flags)               Interactive wizard"
             echo "  --create-config[=FILE]   Write a blank config template (default: secrets.conf)"
@@ -112,10 +112,10 @@ create_secrets_config() {
 #
 # Usage:
 #   # Push secrets + configure GCP infrastructure (run from workstation):
-#   bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf
+#   bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf
 #
 #   # Push secrets only (legacy / re-rotate credentials):
-#   bash deployment/gcp-secrets-bootstrap.sh --from-file=secrets.conf
+#   bash deployment/gcp/gcp-secrets-bootstrap.sh --from-file=secrets.conf
 #
 # Rules:
 #   - REQUIRED values must be non-empty or setup will abort.
@@ -149,7 +149,7 @@ ALLOWED_SOURCE_RANGES="0.0.0.0/0"  # [metadata]
 DOMAIN_NAME=""               # [metadata] REQUIRED
 
 # Git repository and branch to deploy
-GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"  # [metadata]
+GIT_REPO_URL="https://github.com/BorealTek/Treescout-Core.git"  # [metadata]
 GIT_BRANCH="laravel-11-foundation"  # [metadata]
 
 # Server-side installation path for the running app
@@ -243,7 +243,7 @@ EOF
     chmod 600 "$out"
     log_success "Template written: $out"
     log_info  "Fill in the values, then run:"
-    log_code  "  bash deployment/gcp-secrets-bootstrap.sh --from-file=${out}"
+    log_code  "  bash deployment/gcp/gcp-secrets-bootstrap.sh --from-file=${out}"
     echo ""
 }
 
@@ -663,12 +663,12 @@ main() {
         echo ""
         echo -e "${CYAN}Next steps:${NC}"
         log_code "  Recommended — full setup in one command (creates instance, sets metadata, SSHs to deploy):"
-        log_code "    bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf"
+        log_code "    bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf"
         echo ""
         log_code "  Or, legacy manual flow (secrets only — still need deploy.conf on server):"
-        log_code "    1. Edit  deployment/deploy.conf.gcp  — set DOMAIN_NAME, ALLOWED_SOURCE_RANGES"
-        log_code "    2. Validate:  bash deployment/gcp-config-validate.sh"
-        log_code "    3. Deploy:    sudo bash deployment/gcp_deploy.sh"
+        log_code "    1. Edit  deployment/gcp/deploy.conf.gcp  — set DOMAIN_NAME, ALLOWED_SOURCE_RANGES"
+        log_code "    2. Validate:  bash deployment/gcp/gcp-config-validate.sh"
+        log_code "    3. Deploy:    sudo bash deployment/gcp/gcp_deploy.sh"
         echo ""
         exit 0
     fi
@@ -797,13 +797,13 @@ main() {
     fi
     echo ""
     echo -e "${CYAN}Next steps:${NC}"
-    log_code "  1. Edit  deployment/deploy.conf.gcp  — set DOMAIN_NAME, ALLOWED_SOURCE_RANGES"
-    log_code "  2. Validate:  bash deployment/gcp-config-validate.sh"
-    log_code "  3. Deploy:    sudo bash deployment/gcp_deploy.sh"
+    log_code "  1. Edit  deployment/gcp/deploy.conf.gcp  — set DOMAIN_NAME, ALLOWED_SOURCE_RANGES"
+    log_code "  2. Validate:  bash deployment/gcp/gcp-config-validate.sh"
+    log_code "  3. Deploy:    sudo bash deployment/gcp/gcp_deploy.sh"
     echo ""
     log_info "Tip: next time you can use a config file instead of the interactive wizard:"
-    log_code "  bash deployment/gcp-secrets-bootstrap.sh --create-config   # generates template"
-    log_code "  bash deployment/gcp-secrets-bootstrap.sh --from-file=secrets.conf  # populates from it"
+    log_code "  bash deployment/gcp/gcp-secrets-bootstrap.sh --create-config   # generates template"
+    log_code "  bash deployment/gcp/gcp-secrets-bootstrap.sh --from-file=secrets.conf  # populates from it"
     echo ""
 }
 

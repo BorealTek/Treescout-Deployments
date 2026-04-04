@@ -10,7 +10,7 @@ The tunnel runs **outside** the app stack so:
 ## Quickstart (Docker Compose)
 
 ```bash
-cd deployment/cloudflared
+cd deployment/docker/cloudflared
 
 # Create an env file with your token
 echo "CF_TUNNEL_TOKEN=eyJ..." > .env

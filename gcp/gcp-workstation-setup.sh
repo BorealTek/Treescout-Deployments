@@ -6,10 +6,10 @@
 # ONCE before first deploy, and anytime you need to assert / repair the setup.
 #
 # Usage:
-#   bash deployment/gcp-workstation-setup.sh                           # interactive
-#   bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf  # non-interactive
-#   bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --yes
-#   bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
+#   bash deployment/gcp/gcp-workstation-setup.sh                           # interactive
+#   bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf  # non-interactive
+#   bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf --yes
+#   bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
 #
 # What this script does (idempotent — safe to run repeatedly):
 #   1. Selects / confirms the GCP project
@@ -82,7 +82,7 @@ DOCKER_SUBNET="172.20.0.0/16"
 DB_USER="treescout"
 DB_NAME="treescout"
 DB_HOST="db"
-GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
+GIT_REPO_URL="https://github.com/BorealTek/Treescout-Core.git"
 GIT_BRANCH="laravel-11-foundation"
 MODULE_DIR_POLICY="replace" # skip|replace|abort|ask
 DEFAULT_INSTALL_DIR="/opt/treescout-docker"
@@ -1142,7 +1142,7 @@ offer_server_bootstrap() {
     local server_init=""
     for candidate in \
         "${SCRIPT_DIR}/gcp-server-init.sh" \
-        "${PWD}/deployment/gcp-server-init.sh" \
+        "${PWD}/deployment/gcp/gcp-server-init.sh" \
         "${PWD}/gcp-server-init.sh"; do
         if [ -f "$candidate" ]; then
             server_init="$candidate"
@@ -1159,7 +1159,7 @@ offer_server_bootstrap() {
     if [ -n "$server_init" ]; then
         log_code "cat $server_init | gcloud compute ssh $GCP_INSTANCE_NAME --zone=$GCP_ZONE \\"
     else
-        log_code "cat deployment/gcp-server-init.sh | gcloud compute ssh $GCP_INSTANCE_NAME --zone=$GCP_ZONE \\"
+        log_code "cat deployment/gcp/gcp-server-init.sh | gcloud compute ssh $GCP_INSTANCE_NAME --zone=$GCP_ZONE \\"
     fi
     log_code "  --project=$PROJECT_ID -- 'sudo bash -s'"
     echo ""
@@ -1205,7 +1205,7 @@ offer_server_bootstrap() {
             return
         fi
 
-        local raw_url="https://raw.githubusercontent.com/Scotchmcdonald/freescout/${GIT_BRANCH}/deployment/gcp-server-init.sh"
+        local raw_url="https://raw.githubusercontent.com/BorealTek/Treescout-Core/${GIT_BRANCH}/deployment/gcp/gcp-server-init.sh"
         log_step "Streaming gcp-server-init.sh from GitHub to $GCP_INSTANCE_NAME..."
         if ! _run_bootstrap_command "$ssh_mode" "curl -fsSL '$raw_url' | sudo bash"; then
             log_error "Bootstrap stream command failed on VM."

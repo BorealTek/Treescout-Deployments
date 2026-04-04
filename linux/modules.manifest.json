@@ -1,8 +1,8 @@
 {
-  "_comment": "Single source of truth for all module repositories and deployment profiles. Read by scripts/setup-modules.sh and deployment/docker_deploy.sh.",
+  "_comment": "Single source of truth for all module repositories and deployment profiles. Read by scripts/setup-modules.sh and deployment/docker/docker_deploy.sh.",
   "core": {
     "_comment": "The main application repo. PUBLIC — no token required.",
-    "repo": "https://github.com/Scotchmcdonald/freescout.git",
+    "repo": "https://github.com/BorealTek/Treescout-Core.git",
     "branch": "main",
     "private": false
   },

@@ -7,8 +7,8 @@
 #
 # Prerequisites:
 #   1. Create a .env file here (or export vars) with CF_TUNNEL_TOKEN set.
-#      Copy from ../deploy.conf or set inline:
-#        echo "CF_TUNNEL_TOKEN=eyJ..." > deployment/cloudflared/.env
+#      Copy from ../../linux/deploy.conf or set inline:
+#        echo "CF_TUNNEL_TOKEN=eyJ..." > deployment/docker/cloudflared/.env
 #
 #   2. Add the public hostnames in Cloudflare Zero Trust → Networks → Tunnels:
 #        ssh.tickets.borealtek.ca  →  SSH   →  localhost:22
@@ -18,7 +18,7 @@
 #      your existing Google OAuth policy.
 #
 # Usage:
-#   cd deployment/cloudflared
+#   cd deployment/docker/cloudflared
 #   docker compose up -d
 #   docker compose logs -f
 #

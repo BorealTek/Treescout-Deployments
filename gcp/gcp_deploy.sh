@@ -13,11 +13,11 @@
 #
 # Usage:
 #   1. Create/edit deploy.conf.gcp with your settings:
-#      cp deployment/deploy.conf.gcp deploy.conf
+#      cp deployment/gcp/deploy.conf.gcp deploy.conf
 #      nano deploy.conf
 #
 #   2. Run this script (requires sudo for Docker access):
-#      sudo bash deployment/gcp_deploy.sh
+#      sudo bash deployment/gcp/gcp_deploy.sh
 #
 # Requirements:
 #   - GCP Compute Engine instance (e2-standard-2 or larger)
@@ -36,9 +36,9 @@ IFS=$'\n\t'
 
 readonly SCRIPT_VERSION="1.0.0"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
+readonly CONFIG_FILE="${SCRIPT_DIR}/../linux/deploy.conf"
 readonly GCP_CONFIG_FILE="${SCRIPT_DIR}/deploy.conf.gcp"
-readonly DOCKER_DEPLOY_SCRIPT="${SCRIPT_DIR}/docker_deploy.sh"
+readonly DOCKER_DEPLOY_SCRIPT="${SCRIPT_DIR}/../docker/docker_deploy.sh"
 
 # Color scheme (matching docker_deploy.sh)
 readonly RED='\033[38;5;196m'
@@ -580,7 +580,7 @@ setup_kroki() {
 
     log_step "Starting Kroki Diagram Renderer"
 
-    local kroki_dir="${SCRIPT_DIR}/kroki"
+    local kroki_dir="${SCRIPT_DIR}/../docker/kroki"
     if [ ! -f "${kroki_dir}/compose.yml" ]; then
         log_warning "Kroki compose.yml not found at ${kroki_dir} — skipping"
         return 0

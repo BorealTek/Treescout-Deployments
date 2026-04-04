@@ -42,7 +42,7 @@ your workstation and is never committed to version control.
 Generate the template:
 
 ```bash
-bash deployment/gcp-secrets-bootstrap.sh --create-config
+bash deployment/gcp/gcp-secrets-bootstrap.sh --create-config
 # Edit secrets.conf — fill in every value before proceeding
 ```
 
@@ -69,7 +69,7 @@ the complete list.
 ## Step 2 — Workstation setup script (`gcp-workstation-setup.sh`)
 
 ```bash
-bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf
+bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf
 ```
 
 This is **idempotent** — safe to run repeatedly to assert or repair the setup.
@@ -106,7 +106,7 @@ Run manually if needed:
 
 ```bash
 gcloud compute ssh treescout-prod --zone=us-central1-a \
-  --project=YOUR_PROJECT_ID -- 'sudo bash -s' < deployment/gcp-server-init.sh
+  --project=YOUR_PROJECT_ID -- 'sudo bash -s' < deployment/gcp/gcp-server-init.sh
 ```
 
 No files need to pre-exist on the server. Everything is piped in via stdin.
@@ -231,7 +231,7 @@ Written by `gcp-workstation-setup.sh`, read by `gcp-server-init.sh`.
 | `ts-admin-email` | `ADMIN_EMAIL` | — | **Required.** Admin login email |
 | `ts-admin-first` | `ADMIN_FIRST_NAME` | `System` | Admin first name |
 | `ts-admin-last` | `ADMIN_LAST_NAME` | `Administrator` | Admin last name |
-| `ts-git-repo` | `GIT_REPO_URL` | `github.com/Scotchmcdonald/freescout` | App repo URL |
+| `ts-git-repo` | `GIT_REPO_URL` | `github.com/BorealTek/Treescout-Core` | App repo URL |
 | `ts-git-branch` | `GIT_BRANCH` | `laravel-11-foundation` | Branch to deploy |
 | `ts-install-dir` | `DEFAULT_INSTALL_DIR` | `/opt/treescout-docker` | Docker Compose root |
 | `ts-docker-subnet` | `DOCKER_SUBNET` | `172.20.0.0/16` | Internal Docker network |
@@ -259,18 +259,18 @@ Written by `gcp-workstation-setup.sh`, read by `gcp-server-init.sh`.
 
 ```bash
 # Edit secrets.conf, then:
-bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
+bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
 ```
 
 ### Full redeploy (picks up all latest config and secrets)
 
 ```bash
 # 1. Push any config/secret changes from workstation
-bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
+bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
 
 # 2. Re-run server bootstrap (pulls fresh secrets, regenerates deploy.conf, redeploys)
 gcloud compute ssh treescout-prod --zone=us-central1-a \
-  -- 'sudo bash -s' < deployment/gcp-server-init.sh
+  -- 'sudo bash -s' < deployment/gcp/gcp-server-init.sh
 ```
 
 ### Reset to clean state (destructive — deletes all data)
@@ -295,7 +295,7 @@ Rotation only requires redeploying if the value is used at container startup
 
 ```bash
 # Update in secrets.conf and push from workstation:
-bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
+bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
 
 # Or rotate a single secret directly:
 echo -n "NewPassword!" | gcloud secrets versions add treescout-admin-pass \
@@ -465,7 +465,7 @@ gcloud compute instances describe treescout-prod \
   --format='yaml(metadata)'
 
 # Re-push metadata:
-bash deployment/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
+bash deployment/gcp/gcp-workstation-setup.sh --from-file=secrets.conf --skip-deploy
 ```
 
 ### Modules won't clone

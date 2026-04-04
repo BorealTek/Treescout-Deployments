@@ -7,8 +7,8 @@
 # before launching gcp_deploy.sh.
 #
 # Usage:
-#   bash deployment/gcp-config-validate.sh
-#   bash deployment/gcp-config-validate.sh deploy.conf  # Custom path
+#   bash deployment/gcp/gcp-config-validate.sh
+#   bash deployment/gcp/gcp-config-validate.sh deploy.conf  # Custom path
 #
 #===============================================================================
 
@@ -17,7 +17,7 @@
 set -uo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
+readonly CONFIG_FILE="${SCRIPT_DIR}/../linux/deploy.conf"
 
 # Colors
 readonly RED='\033[38;5;196m'
@@ -77,7 +77,7 @@ validate_file_exists() {
         log_error "Configuration file not found: $CONFIG_FILE"
         echo ""
         echo "Create from template:"
-        log_code "cp deployment/deploy.conf.gcp deploy.conf"
+        log_code "cp deployment/gcp/deploy.conf.gcp deploy.conf"
         exit 1
     fi
     log_success "Configuration file found: $CONFIG_FILE"
@@ -444,7 +444,7 @@ main() {
         echo "Fix the errors above in: $CONFIG_FILE"
         echo ""
         echo "Then run validation again:"
-        log_code "bash deployment/gcp-config-validate.sh"
+        log_code "bash deployment/gcp/gcp-config-validate.sh"
         exit 1
     fi
 
@@ -466,7 +466,7 @@ main() {
     echo -e "${GREEN}✓ Configuration validation PASSED${NC}"
     echo ""
     echo "Configuration is ready for deployment. Run:"
-    log_code "sudo bash deployment/gcp_deploy.sh"
+    log_code "sudo bash deployment/gcp/gcp_deploy.sh"
     echo ""
     exit 0
 }

@@ -1,8 +1,8 @@
 # Ignore local configuration with secrets
-deploy.conf
-deploy\ copy.conf
-deploy*.conf
-!deploy.conf.example
+linux/deploy.conf
+linux/deploy\ copy.conf
+linux/deploy*.conf
+!linux/deploy.conf.example
 
 # Ignore SSL certificates generated during deployment
 nginx/ssl/
@@ -10,7 +10,7 @@ nginx/ssl/
 *.key
 
 # Ignore local Cloudflared credentials
-cloudflared/.env
+docker/cloudflared/.env
 
 # Ignore system files
 .DS_Store

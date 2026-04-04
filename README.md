@@ -28,12 +28,12 @@ You can run the installers directly without cloning the repository manually. The
 
 **Production (Ubuntu/Linux):**
 ```bash
-sudo bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/docker_deploy.sh)
+sudo bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/docker/docker_deploy.sh)
 ```
 
 **Local Dev (macOS/OrbStack):**
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/orbstack_deploy.sh)
+bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/orbstack/orbstack_deploy.sh)
 ```
 
 ## 🚀 Manual Quick Start
@@ -41,8 +41,8 @@ bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployment
 1.  **Clone this repository** to your target machine (or local dev machine).
 2.  **Configure**:
     ```bash
-    cp deploy.conf.example deploy.conf
-    nano deploy.conf
+    cp linux/deploy.conf.example linux/deploy.conf
+    nano linux/deploy.conf
     ```
     *Edit the configuration with your domain, secrets, and repository URLs.*
 
@@ -50,24 +50,24 @@ bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployment
 
     **For Production (Ubuntu/Linux):**
     ```bash
-    sudo ./docker_deploy.sh
+    sudo ./docker/docker_deploy.sh
     ```
 
     **For Local Dev (macOS/OrbStack):**
     ```bash
-    ./orbstack_deploy.sh
+    ./orbstack/orbstack_deploy.sh
     ```
 
 ## 📂 Structure
 
-*   `docker_deploy.sh` - Main production deployment script.
-*   `orbstack_deploy.sh` - Development deployment script (macOS optimized).
-*   `deploy.conf` - **(Ignored)** Local configuration file containing secrets.
-*   `deploy.conf.example` - Template configuration file.
+*   `docker/` - Docker-focused deploy scripts and sidecars (`docker_deploy.sh`, `cloudflared/`, `kroki/`).
+*   `orbstack/` - OrbStack/macOS deploy script (`orbstack_deploy.sh`).
+*   `gcp/` - GCP deploy tooling, bootstrap scripts, and guide.
+*   `linux/` - Shared Linux deployment configuration and module manifest.
 
 ## ⚠️ Notes
 
-*   **Secrets**: never commit `deploy.conf` to version control.
+*   **Secrets**: never commit `linux/deploy.conf` to version control.
 *   **Requirements**:
     *   Linux: Docker Engine, Docker Compose
     *   macOS: OrbStack (Recommended) or Docker Desktop
@@ -76,7 +76,7 @@ bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployment
 
 ## 🔐 SSH & Cloudflare Tunnel
 
-The Cloudflare tunnel runs as a **separate, standalone stack** in [`cloudflared/`](cloudflared/) — intentionally decoupled from the app so that taking the app down for maintenance never kills SSH access, and so the tunnel can serve other hostnames/services on the same server.
+The Cloudflare tunnel runs as a **separate, standalone stack** in [`docker/cloudflared/`](docker/cloudflared/) — intentionally decoupled from the app so that taking the app down for maintenance never kills SSH access, and so the tunnel can serve other hostnames/services on the same server.
 
-See **[cloudflared/README.md](cloudflared/README.md)** for full setup instructions (Docker Compose, Zero Trust configuration, client `~/.ssh/config`, VS Code Remote SSH, and a systemd alternative).
+See **[docker/cloudflared/README.md](docker/cloudflared/README.md)** for full setup instructions (Docker Compose, Zero Trust configuration, client `~/.ssh/config`, VS Code Remote SSH, and a systemd alternative).
 

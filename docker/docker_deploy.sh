@@ -21,10 +21,10 @@ IFS=$'\n\t'
 
 readonly SCRIPT_VERSION="2.0.0"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_REPO="https://github.com/Scotchmcdonald/freescout.git"
+DEFAULT_REPO="https://github.com/BorealTek/Treescout-Core.git"
 DEFAULT_BRANCH="laravel-11-foundation"
 DEFAULT_INSTALL_DIR="/opt/treescout-docker"
-readonly CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
+readonly CONFIG_FILE="${SCRIPT_DIR}/../linux/deploy.conf"
 
 # Boreal Theme Colors
 readonly RED='\033[38;5;196m'        # Bright Red
@@ -67,7 +67,7 @@ CLEANUP_NEEDED=false
 #   )
 #
 # Canonical module list and deployment profiles are defined in:
-#   deployment/modules.manifest.json
+#   deployment/linux/modules.manifest.json
 # Developer setup uses:
 #   ./scripts/setup-modules.sh [profile]
 MODULES_TO_INSTALL=(
@@ -1577,10 +1577,10 @@ show_completion_message() {
     echo -e "${CYAN}Cloudflare Tunnel (SSH + Web):${NC}"
     echo -e "  The tunnel runs as a separate stack — independent of this app."
     echo -e "  Start it with:"
-    echo -e "    ${YELLOW}cd $DEFAULT_INSTALL_DIR/src/deployment/cloudflared${NC}"
+    echo -e "    ${YELLOW}cd $DEFAULT_INSTALL_DIR/src/deployment/docker/cloudflared${NC}"
     echo -e "    ${YELLOW}echo CF_TUNNEL_TOKEN=\$CF_TUNNEL_TOKEN > .env${NC}"
     echo -e "    ${YELLOW}docker compose up -d${NC}"
-    echo -e "  See deployment/cloudflared/README.md for full setup instructions."
+    echo -e "  See deployment/docker/cloudflared/README.md for full setup instructions."
     echo ""
     echo -e "${CYAN}Next Steps:${NC}"
     echo -e "  • To update: ${YELLOW}cd $DEFAULT_INSTALL_DIR && sudo ./update.sh${NC}"
@@ -1692,7 +1692,7 @@ deploy_cloudflared() {
 
         if [ "$do_deploy_cf" = true ]; then
             log_info "Deploying standalone Cloudflare Tunnel..."
-            local cf_dir="$DEFAULT_INSTALL_DIR/src/deployment/cloudflared"
+            local cf_dir="$DEFAULT_INSTALL_DIR/src/deployment/docker/cloudflared"
             if [ -d "$cf_dir" ]; then
                 cd "$cf_dir"
                 echo "CF_TUNNEL_TOKEN=\"${CF_TUNNEL_TOKEN}\"" > .env

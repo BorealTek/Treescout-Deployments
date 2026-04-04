@@ -28,10 +28,10 @@ export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.orbstack/bin"
 
 readonly SCRIPT_VERSION="2.0.0"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_REPO="https://github.com/Scotchmcdonald/freescout.git"
+DEFAULT_REPO="https://github.com/BorealTek/Treescout-Core.git"
 DEFAULT_BRANCH="laravel-11-foundation"
 DEFAULT_INSTALL_DIR="$HOME/borealtek-ticketing"
-readonly CONFIG_FILE="${SCRIPT_DIR}/deploy.conf"
+readonly CONFIG_FILE="${SCRIPT_DIR}/../linux/deploy.conf"
 
 # Boreal Theme Colors
 readonly RED='\033[38;5;196m'        # Bright Red
@@ -1804,7 +1804,7 @@ deploy_cloudflared() {
 
         if [ "$do_deploy_cf" = true ]; then
             log_info "Deploying standalone Cloudflare Tunnel..."
-            local cf_dir="$DEFAULT_INSTALL_DIR/src/deployment/cloudflared"
+            local cf_dir="$DEFAULT_INSTALL_DIR/src/deployment/docker/cloudflared"
             if [ -d "$cf_dir" ]; then
                 cd "$cf_dir"
                 echo "CF_TUNNEL_TOKEN=\"${CF_TUNNEL_TOKEN}\"" > .env

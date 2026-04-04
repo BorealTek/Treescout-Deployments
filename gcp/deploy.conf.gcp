@@ -4,10 +4,10 @@
 # ┌─────────────────────────────────────────────────────────────────────────┐
 # │  FIRST-TIME SETUP                                                       │
 # │  1. Create all secrets in GCP Secret Manager:                           │
-# │       bash deployment/gcp-secrets-bootstrap.sh                         │
+# │       bash deployment/gcp/gcp-secrets-bootstrap.sh                     │
 # │  2. Fill in non-secret values below (DOMAIN_NAME, ALLOWED_SOURCE_RANGES)│
-# │  3. Validate:  bash deployment/gcp-config-validate.sh                  │
-# │  4. Deploy:    sudo bash deployment/gcp_deploy.sh                       │
+# │  3. Validate:  bash deployment/gcp/gcp-config-validate.sh              │
+# │  4. Deploy:    sudo bash deployment/gcp/gcp_deploy.sh                  │
 # └─────────────────────────────────────────────────────────────────────────┘
 #
 # This file is committed to git as the template — it contains NO real secrets.
@@ -24,7 +24,7 @@ USE_GCP_SECRET_MANAGER="true"
 #===============================================================================
 # INSTALLATION
 #===============================================================================
-GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
+GIT_REPO_URL="https://github.com/BorealTek/Treescout-Core.git"
 GIT_BRANCH="laravel-11-foundation"
 DEFAULT_INSTALL_DIR="/opt/treescout-docker"
 GCP_PROJECT_ID=""       # Auto-detected from instance metadata when blank
@@ -169,7 +169,7 @@ export REPO_TOKEN=""
 REPO_TOKEN_SECRET="treescout-repo-token"
 
 # Modules to install.  Format: "Name|RepoURL|REPO_TOKEN|Branch"
-# See deployment/modules.manifest.json for all available modules and profiles.
+# See deployment/linux/modules.manifest.json for all available modules and profiles.
 #
 # FULL (BorealTek internal — all 18 modules):
 MODULES_TO_INSTALL=(

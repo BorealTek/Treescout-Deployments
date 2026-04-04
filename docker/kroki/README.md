@@ -5,7 +5,7 @@ This stack runs Kroki independently from the app stack, mirroring the separate l
 ## Start
 
 ```bash
-cd deployment/kroki
+cd deployment/docker/kroki
 docker compose up -d
 docker compose logs -f
 ```

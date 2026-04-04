@@ -8,7 +8,7 @@
 #===============================================================================
 
 # Git Repository to deploy from
-GIT_REPO_URL="https://github.com/Scotchmcdonald/freescout.git"
+GIT_REPO_URL="https://github.com/BorealTek/Treescout-Core.git"
 GIT_BRANCH="laravel-11-foundation"
 
 # Installation path on the server
@@ -108,7 +108,7 @@ ACTION1_MANAGE_CLIENT_SECRET=""
 #===============================================================================
 
 # GitHub Token — REQUIRED for all module repos (all BorealTek/* repos are PRIVATE)
-# The core app repo (Scotchmcdonald/freescout) is PUBLIC and does not need this.
+# The core app repo (BorealTek/Treescout-Core) is PUBLIC and does not need this.
 # Create a PAT at: https://github.com/settings/tokens  (scope: repo)
 export REPO_TOKEN=""
 
@@ -117,7 +117,7 @@ export REPO_TOKEN=""
 #
 # Edit this list to match the client profile you are deploying.
 # All available modules and named profiles are defined in:
-#   deployment/modules.manifest.json
+#   deployment/linux/modules.manifest.json
 #
 # Common profiles:
 #
