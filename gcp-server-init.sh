@@ -882,6 +882,7 @@ APP_ENV=production
 APP_DEBUG=false
 APP_KEY=${APP_KEY}
 APP_URL=https://${DOMAIN_NAME}
+GOOGLE_REDIRECT_URI="${APP_URL}/auth/google/callback"
 
 LOG_CHANNEL=stack
 LOG_LEVEL=warning
