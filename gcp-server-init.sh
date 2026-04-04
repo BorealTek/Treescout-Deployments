@@ -882,7 +882,7 @@ APP_ENV=production
 APP_DEBUG=false
 APP_KEY=${APP_KEY}
 APP_URL=https://${DOMAIN_NAME}
-GOOGLE_REDIRECT_URI="${APP_URL}/auth/google/callback"
+GOOGLE_REDIRECT_URI=https://${DOMAIN_NAME}/auth/google/callback
 
 LOG_CHANNEL=stack
 LOG_LEVEL=warning
@@ -910,9 +910,17 @@ QUEUE_CONNECTION=database
 BROADCAST_DRIVER=reverb
 REVERB_HOST=reverb
 REVERB_PORT=8081
+REVERB_SCHEME=http
 REVERB_APP_ID=treescout-001
 REVERB_APP_KEY=treescout-reverb-key
 REVERB_APP_SECRET=${DB_ROOT_PASS}
+REVERB_SERVER_HOST=${DOMAIN_NAME}
+REVERB_SERVER_PORT=443
+REVERB_SERVER_PATH=
+VITE_REVERB_APP_KEY=treescout-reverb-key
+VITE_REVERB_HOST=${DOMAIN_NAME}
+VITE_REVERB_PORT=443
+VITE_REVERB_SCHEME=https
 
 # ── Mail ─────────────────────────────────────────────────────────────────────
 MAIL_MAILER=log
@@ -1252,6 +1260,36 @@ post_deploy() {
     docker compose -f docker-compose.prod.yml exec -T app \
         php artisan migrate --force --no-interaction
     log_success "Migrations complete"
+
+    log_step "Running module migrations"
+    docker compose -f docker-compose.prod.yml exec -T app \
+        php artisan module:migrate --all --force --no-interaction
+    log_success "Module migrations complete"
+
+    log_step "Seeding themes"
+    docker compose -f docker-compose.prod.yml exec -T app \
+        php artisan db:seed --class=ThemeSeeder --force --no-interaction
+    log_success "Theme seeding complete"
+
+    log_step "Seeding RBAC"
+    docker compose -f docker-compose.prod.yml exec -T app \
+        php artisan db:seed --class=RbacSeeder --force --no-interaction
+    log_success "RBAC seeding complete"
+
+    log_step "Seeding default users"
+    docker compose -f docker-compose.prod.yml exec -T app \
+        php artisan db:seed --class=UserSeeder --force --no-interaction
+    log_success "User seeding complete"
+
+    log_step "Seeding enabled modules"
+    docker compose -f docker-compose.prod.yml exec -T app \
+        php artisan module:seed --all --force --no-interaction || true
+    log_success "Module seeding complete"
+
+    log_step "Restarting queue workers"
+    docker compose -f docker-compose.prod.yml exec -T app \
+        php artisan queue:restart --no-interaction || true
+    log_success "Queue restart signal sent"
 
     echo ""
     echo -e "${CYAN}══════════════════════════════════════════════════════════════${NC}"
