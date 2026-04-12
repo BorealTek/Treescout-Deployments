@@ -112,6 +112,12 @@ ACTION1_MANAGE_CLIENT_SECRET=""
 # Create a PAT at: https://github.com/settings/tokens  (scope: repo)
 export REPO_TOKEN=""
 
+# GitHub API Token for in-app update checks.
+# Used by the web UI to call the GitHub REST API and detect when the app or
+# modules are behind (critical for Docker deployments where .git dirs are absent).
+# Set this to the same value as REPO_TOKEN (read-only repo scope is sufficient).
+export APP_GITHUB_API_TOKEN="${REPO_TOKEN}"
+
 # Modules to install for this deployment.
 # Format: "ModuleName|RepoURL|REPO_TOKEN|Branch"
 #
