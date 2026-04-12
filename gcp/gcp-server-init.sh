@@ -892,6 +892,10 @@ GOOGLE_REDIRECT_URI=https://${DOMAIN_NAME}/auth/google/callback
 APP_SOURCE_REPO=${source_repo}
 APP_SOURCE_BRANCH=${GIT_BRANCH}
 APP_BUILD_COMMIT=unknown
+# Personal Access Token (PAT) with read-only repo scope.
+# Required for GitHub API update checks on private module/app repositories.
+# Set to the same REPO_TOKEN value used to clone modules.
+APP_GITHUB_API_TOKEN=
 
 LOG_CHANNEL=stack
 LOG_LEVEL=warning
@@ -1132,6 +1136,22 @@ build_local_image() {
         if [ -n "$temp_module_dir" ]; then
             rm -rf "$module_dir"
             mv "$temp_module_dir" "$module_dir"
+        fi
+
+        # Bake build-commit metadata into module.json so the running app can
+        # check for updates via the GitHub API even without a .git directory.
+        local mod_sha
+        mod_sha=$(git -C "${module_dir}" rev-parse HEAD 2>/dev/null || echo "")
+        if [ -n "$mod_sha" ] && [ -f "${module_dir}/module.json" ]; then
+            local tmp_json
+            tmp_json=$(mktemp)
+            jq --arg sha "$mod_sha" \
+               --arg repo "$repo"   \
+               --arg branch "$branch" \
+               '. + {build_commit: $sha, source_repo: $repo, source_branch: $branch}' \
+               "${module_dir}/module.json" > "$tmp_json" \
+               && mv "$tmp_json" "${module_dir}/module.json" \
+               || rm -f "$tmp_json"
         fi
 
         rm -rf "${module_dir}/.git"
