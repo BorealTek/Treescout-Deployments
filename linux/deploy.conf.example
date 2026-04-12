@@ -9,7 +9,7 @@
 
 # Git Repository to deploy from
 GIT_REPO_URL="https://github.com/BorealTek/Treescout-Core.git"
-GIT_BRANCH="laravel-11-foundation"
+GIT_BRANCH="main"
 
 # Installation path on the server
 DEFAULT_INSTALL_DIR="/opt/freescout-docker"
