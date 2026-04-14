@@ -79,6 +79,7 @@ MODULES_TO_INSTALL=(
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
     "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
+    "Prospects|https://github.com/BorealTek/Treescout-Prospects.git|REPO_TOKEN|main"
 )
 
 #===============================================================================
@@ -355,6 +356,7 @@ MODULES_TO_INSTALL=(
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
     "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
+    "Prospects|https://github.com/BorealTek/Treescout-Prospects.git|REPO_TOKEN|main"
 )
 EOF
 }

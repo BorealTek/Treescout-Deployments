@@ -191,6 +191,7 @@ MODULES_TO_INSTALL=(
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
     "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
+    "Prospects|https://github.com/BorealTek/Treescout-Prospects.git|REPO_TOKEN|main"
 )
 
 # CORE-MSP (helpdesk + CRM + billing + assets + portal):
@@ -200,6 +201,7 @@ MODULES_TO_INSTALL=(
 #     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
 #     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
 #     "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
+#     "Prospects|https://github.com/BorealTek/Treescout-Prospects.git|REPO_TOKEN|main"
 # )
 
 # HELPDESK-ONLY (CRM + portal + knowledge base):
