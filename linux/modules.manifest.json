@@ -122,6 +122,17 @@
       "branch": "main",
       "private": true,
       "description": "Manages client deployment records, OTACs, and Git provider token issuance for TreeScout module deployments"
+    },
+    "Prospects": {
+      "repo": "https://github.com/BorealTek/Treescout-Prospects.git",
+      "branch": "main",
+      "private": true,
+      "description": "Prospects pipeline, deal management, and ContractManager quote orchestration",
+      "requires": [
+        "Crm",
+        "ContractManager",
+        "ClientPortal"
+      ]
     }
   },
   "profiles": {
@@ -143,7 +154,8 @@
         "DevFeedback",
         "EmailMigration",
         "CaseManager",
-        "DeploymentManager"
+        "DeploymentManager",
+        "Prospects"
       ]
     },
     "core-msp": {
@@ -157,7 +169,8 @@
         "SoftwareSubscriptions",
         "ClientPortal",
         "Alerts",
-        "WidgetRegistry"
+        "WidgetRegistry",
+        "Prospects"
       ]
     },
     "helpdesk-only": {
