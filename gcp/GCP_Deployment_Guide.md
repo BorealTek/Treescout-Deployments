@@ -39,11 +39,11 @@ No tools need to be installed on the server beforehand — the server bootstrap 
 `secrets.conf` is the **single source of truth** for a deployment. It lives only on
 your workstation and is never committed to version control.
 
-Generate the template:
+Create it by copying the template below (or from the guide) and filling in every value:
 
 ```bash
-bash deployment/gcp/gcp-secrets-bootstrap.sh --create-config
-# Edit secrets.conf — fill in every value before proceeding
+cp deployment/gcp/secrets.conf.example secrets.conf   # if an example file exists
+# or create it manually — the required keys are listed in the table below
 ```
 
 **Minimum required fields:**
@@ -232,7 +232,7 @@ Written by `gcp-workstation-setup.sh`, read by `gcp-server-init.sh`.
 | `ts-admin-first` | `ADMIN_FIRST_NAME` | `System` | Admin first name |
 | `ts-admin-last` | `ADMIN_LAST_NAME` | `Administrator` | Admin last name |
 | `ts-git-repo` | `GIT_REPO_URL` | `github.com/BorealTek/Treescout-Core` | App repo URL |
-| `ts-git-branch` | `GIT_BRANCH` | `laravel-11-foundation` | Branch to deploy |
+| `ts-git-branch` | `GIT_BRANCH` | `main` | Branch to deploy |
 | `ts-install-dir` | `DEFAULT_INSTALL_DIR` | `/opt/treescout-docker` | Docker Compose root |
 | `ts-docker-subnet` | `DOCKER_SUBNET` | `172.20.0.0/16` | Internal Docker network |
 | `ts-db-user` | `DB_USER` | `treescout` | Database user |

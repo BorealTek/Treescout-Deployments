@@ -37,7 +37,6 @@ IFS=$'\n\t'
 readonly SCRIPT_VERSION="1.0.0"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly CONFIG_FILE="${SCRIPT_DIR}/../linux/deploy.conf"
-readonly GCP_CONFIG_FILE="${SCRIPT_DIR}/deploy.conf.gcp"
 readonly DOCKER_DEPLOY_SCRIPT="${SCRIPT_DIR}/../docker/docker_deploy.sh"
 
 # Color scheme (matching docker_deploy.sh)
@@ -163,21 +162,12 @@ detect_gcp_environment() {
 load_config() {
     log_step "Loading Configuration"
 
-    # Use deploy.conf if it exists, otherwise use deploy.conf.gcp template
-    if [ -f "$CONFIG_FILE" ]; then
-        log_info "Using existing deploy.conf"
-        source "$CONFIG_FILE"
-    elif [ -f "$GCP_CONFIG_FILE" ]; then
-        log_info "Using deploy.conf.gcp template"
-        log_warning "IMPORTANT: Edit deploy.conf.gcp with your actual values before redeploying"
-        source "$GCP_CONFIG_FILE"
-        cp "$GCP_CONFIG_FILE" "$CONFIG_FILE"
-        log_info "Copied to deploy.conf for next runs"
-    else
-        log_error "No configuration found!"
-        log_info "Expected: $CONFIG_FILE or $GCP_CONFIG_FILE"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        log_error "Configuration file not found: $CONFIG_FILE"
+        log_info "Run gcp-server-init.sh — it generates deploy.conf automatically from instance metadata."
         exit 1
     fi
+    source "$CONFIG_FILE"
 
     # Override GCP variables if detected
     if [ "$GCP_IS_RUNNING_IN_GCP" = true ]; then
@@ -345,48 +335,6 @@ setup_cloud_logging() {
     log_code "# Review /tmp/add-ops-agent.sh, then:"
     log_code "sudo bash /tmp/add-ops-agent.sh && sudo apt-get install -y google-cloud-ops-agent"
     log_code "sudo systemctl restart google-cloud-ops-agent"
-}
-
-#===============================================================================
-# GCP MONITORING & ALERTS
-#===============================================================================
-
-setup_monitoring() {
-    log_step "Setting Up GCP Cloud Monitoring (Optional)"
-
-    if [ "${ENABLE_GCP_MONITORING:-false}" != "true" ]; then
-        log_info "GCP Cloud Monitoring disabled"
-        return 0
-    fi
-
-    if ! command_exists gcloud; then
-        log_warning "gcloud CLI not found — cannot setup monitoring"
-        return 0
-    fi
-
-    log_info "Monitoring is auto-enabled on GCP Compute Engine instances"
-    log_info "View metrics at: https://console.cloud.google.com/monitoring"
-    log_code "gcloud monitoring dashboards create --config-from-file=- <<EOF"
-    log_code "{\"displayName\": \"TreeScout\"}"
-    log_code "EOF"
-}
-
-#===============================================================================
-# CONFIG VALIDATION (wraps gcp-config-validate.sh)
-#===============================================================================
-
-run_config_validation() {
-    if [ ! -f "${SCRIPT_DIR}/gcp-config-validate.sh" ]; then
-        log_warning "gcp-config-validate.sh not found — skipping pre-deploy validation"
-        return 0
-    fi
-    local flags=()
-    [ "$AUTO_APPROVE" = true ] && flags+=("--yes")
-    log_step "Pre-deploy Configuration Validation"
-    if ! bash "${SCRIPT_DIR}/gcp-config-validate.sh" "${flags[@]}"; then
-        log_error "Pre-deploy validation failed — fix errors above and re-run"
-        exit 1
-    fi
 }
 
 #===============================================================================
@@ -685,7 +633,6 @@ main() {
     health_check_gcp
     detect_gcp_environment
     load_config
-    run_config_validation
     pull_gcp_secrets
 
     # Create GCP-specific resources
@@ -695,7 +642,6 @@ main() {
     fi
 
     setup_cloud_logging
-    setup_monitoring
     setup_kroki
 
     # Show summary

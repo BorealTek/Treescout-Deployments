@@ -29,7 +29,7 @@ export PATH="$PATH:/usr/local/bin:/opt/homebrew/bin:$HOME/.orbstack/bin"
 readonly SCRIPT_VERSION="2.0.0"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_REPO="https://github.com/BorealTek/Treescout-Core.git"
-DEFAULT_BRANCH="laravel-11-foundation"
+DEFAULT_BRANCH="main"
 DEFAULT_INSTALL_DIR="$HOME/borealtek-ticketing"
 readonly CONFIG_FILE="${SCRIPT_DIR}/../linux/deploy.conf"
 
