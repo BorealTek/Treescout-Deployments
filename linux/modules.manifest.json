@@ -7,40 +7,12 @@
     "private": false
   },
   "modules": {
-    "_comment": "All module repos are PRIVATE (github.com/BorealTek/*). REPO_TOKEN is required to clone or update them.",
+    "_comment": "All module repos are PRIVATE (github.com/BorealTek/*). REPO_TOKEN is required to clone or update them. Modules embedded directly in Treescout-Core (Reporting, TimeTracking, Prospects) are not listed here — they ship with the core clone.",
     "Crm": {
       "repo": "https://github.com/BorealTek/Crm-Module.git",
       "branch": "main",
       "private": true,
       "description": "Client & contact management, custom customer fields"
-    },
-    "PIB": {
-      "repo": "https://github.com/BorealTek/PIB-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Partner Invoicing & Billing — products, entitlements, invoices, credit ledger",
-      "requires": [
-        "Crm"
-      ]
-    },
-    "Payment": {
-      "repo": "https://github.com/BorealTek/Payment-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Payment gateway integration (Helcim)",
-      "requires": [
-        "PIB"
-      ]
-    },
-    "ContractManager": {
-      "repo": "https://github.com/BorealTek/ContractManager-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Quotes, contracts, billing templates, milestones",
-      "requires": [
-        "Crm",
-        "PIB"
-      ]
     },
     "AssetManagement": {
       "repo": "https://github.com/BorealTek/AssetManagement-Module.git",
@@ -99,40 +71,11 @@
       "private": true,
       "description": "Composable widget slot system for UI composition"
     },
-    "DevFeedback": {
-      "repo": "https://github.com/BorealTek/DevFeedback-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Internal developer feedback tooling"
-    },
-    "EmailMigration": {
-      "repo": "https://github.com/BorealTek/EmailMigration-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Email data migration utilities"
-    },
     "CaseManager": {
       "repo": "https://github.com/BorealTek/CaseManager-Module.git",
       "branch": "main",
       "private": true,
       "description": "AI-Powered Tier 0 Case Manager — triage, research, and knowledge engine"
-    },
-    "DeploymentManager": {
-      "repo": "https://github.com/BorealTek/DeploymentManager-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Manages client deployment records, OTACs, and Git provider token issuance for TreeScout module deployments"
-    },
-    "Prospects": {
-      "repo": "https://github.com/BorealTek/Treescout-Prospects.git",
-      "branch": "main",
-      "private": true,
-      "description": "Prospects pipeline, deal management, and ContractManager quote orchestration",
-      "requires": [
-        "Crm",
-        "ContractManager",
-        "ClientPortal"
-      ]
     }
   },
   "profiles": {
@@ -140,9 +83,6 @@
       "description": "All modules — BorealTek internal deployment",
       "modules": [
         "Crm",
-        "PIB",
-        "Payment",
-        "ContractManager",
         "AssetManagement",
         "SoftwareSubscriptions",
         "ClientPortal",
@@ -151,26 +91,18 @@
         "Alerts",
         "Action1",
         "WidgetRegistry",
-        "DevFeedback",
-        "EmailMigration",
-        "CaseManager",
-        "DeploymentManager",
-        "Prospects"
+        "CaseManager"
       ]
     },
     "core-msp": {
-      "description": "Standard MSP client — helpdesk + CRM + billing + assets + portal",
+      "description": "Standard MSP client — helpdesk + CRM + assets + portal",
       "modules": [
         "Crm",
-        "PIB",
-        "Payment",
-        "ContractManager",
         "AssetManagement",
         "SoftwareSubscriptions",
         "ClientPortal",
         "Alerts",
-        "WidgetRegistry",
-        "Prospects"
+        "WidgetRegistry"
       ]
     },
     "helpdesk-only": {
@@ -186,9 +118,6 @@
       "description": "MSP with Google Workspace user management",
       "modules": [
         "Crm",
-        "PIB",
-        "Payment",
-        "ContractManager",
         "AssetManagement",
         "SoftwareSubscriptions",
         "ClientPortal",
