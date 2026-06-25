@@ -46,17 +46,18 @@ log_step()    { echo ""; echo -e "${CYAN}━━━  $* ${NC}"; }
 
 ask() {
     # ask VAR_NAME "Prompt text" ["default"]
+    # Reads from /dev/tty so it works when script is piped via curl | bash
     local var="$1" prompt="$2" default="${3:-}"
     local display_default=""
     if [[ -n "$default" ]]; then display_default=" [${default}]"; fi
-    read -rp "  ${prompt}${display_default}: " val
+    read -rp "  ${prompt}${display_default}: " val </dev/tty
     if [[ -z "$val" && -n "$default" ]]; then val="$default"; fi
     printf -v "$var" '%s' "$val"
 }
 
 ask_secret() {
     local var="$1" prompt="$2"
-    read -rsp "  ${prompt}: " val
+    read -rsp "  ${prompt}: " val </dev/tty
     echo ""
     printf -v "$var" '%s' "$val"
 }
