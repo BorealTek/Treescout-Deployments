@@ -282,6 +282,8 @@ services:
             - redis
         networks:
             - treescout-net
+        healthcheck:
+            disable: true
 
     cron:
         image: ghcr.io/borealtek/treescout:${TREESCOUT_PROFILE:-full}-latest
@@ -304,6 +306,8 @@ services:
             - redis
         networks:
             - treescout-net
+        healthcheck:
+            disable: true
 
     reverb:
         image: ghcr.io/borealtek/treescout:${TREESCOUT_PROFILE:-full}-latest
@@ -324,6 +328,8 @@ services:
             - redis
         networks:
             - treescout-net
+        healthcheck:
+            disable: true
 
     db:
         image: mariadb:10.6
@@ -552,10 +558,15 @@ first_run_setup() {
     cd "${INSTALL_DIR}"
 
     log_info "Generating app key..."
-    docker compose -f docker-compose.prod.yml exec -T app php artisan key:generate --force
+    # key:generate writes to a .env inside the container (no file there at runtime).
+    # Use --show to print the key and write it to the host .env, then restart containers.
+    local app_key
+    app_key=$(docker compose -f docker-compose.prod.yml exec -T app php artisan key:generate --show)
+    sed -i "s|^APP_KEY=.*|APP_KEY=${app_key}|" "${INSTALL_DIR}/.env"
+    docker compose -f docker-compose.prod.yml up -d --force-recreate app queue cron reverb
 
-    log_info "Running treescout:install..."
-    docker compose -f docker-compose.prod.yml exec -T app php artisan treescout:install \
+    log_info "Running freescout:install..."
+    docker compose -f docker-compose.prod.yml exec -T app php artisan freescout:install \
         --force \
         --email="${ADMIN_EMAIL}" \
         --password="${ADMIN_PASSWORD}"
