@@ -33,9 +33,9 @@ In **Zero Trust → Networks → Tunnels → your tunnel → Configure → Publi
 | Subdomain | Domain | Service | URL | Notes |
 |---|---|---|---|---|
 | `ssh` | `tickets.borealtek.ca` | SSH | `localhost:22` | Dev/admin access |
-| _(root)_ | `tickets.borealtek.ca` | HTTPS | `localhost:443` | Web app |
+| _(root)_ | `tickets.borealtek.ca` | HTTP | `localhost:8080` | Web app (tunnel handles TLS) |
 
-For the HTTPS hostname, toggle **No TLS Verify ON** (the app container uses a self-signed cert).
+The app nginx serves plain HTTP on 8080 — no SSL between cloudflared and origin, no TLS verify needed. Emergency LAN access (self-signed HTTPS) is available at `localhost:8443`.
 
 ---
 

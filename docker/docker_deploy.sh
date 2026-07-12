@@ -298,32 +298,6 @@ load_or_create_config() {
     fi
 }
 
-interactive_menu() {
-    local choice
-    while true; do
-        # show_banner - removed to prevent flickering
-        echo ""
-        echo -e "  ${COLOR_PRIMARY}[1]${NC} Deploy to Docker (Fresh)"
-        echo -e "  ${COLOR_PRIMARY}[2]${NC} Update Existing/Redeploy"
-        echo -e "  ${COLOR_PRIMARY}[4]${NC} View Logs"
-        echo -e "  ${COLOR_PRIMARY}[0]${NC} Exit"
-        echo ""
-        safe_read "  Enter Selection: " choice
-
-        case $choice in
-            1) return 0 ;;
-            2) return 0 ;;
-            4)
-                if command_exists docker; then
-                     sudo docker compose logs -f app
-                fi
-                ;;
-            0) exit 0 ;;
-            *) log_error "Invalid selection" ; sleep 1 ;;
-        esac
-    done
-}
-
 save_current_config() {
     log_info "Saving configuration to $CONFIG_FILE..."
 
@@ -797,30 +771,33 @@ EOF
 }
 
 generate_nginx_config() {
-    log_step "Generating Nginx Configuration (HTTPS + WebSocket)"
+    log_step "Generating Nginx Configuration (HTTP for Cloudflare tunnel + HTTPS for emergency LAN)"
 
     cat > nginx/default.conf <<'EOF'
-upstream reverb_backend {
-    server reverb:8080;
-}
-
+# Plain HTTP on port 8080 — Cloudflare tunnel origin.
+# The tunnel handles TLS between users and Cloudflare's edge;
+# no SSL is needed between cloudflared and this origin.
 server {
-    listen 8080 ssl http2 default_server;
+    listen 8080 default_server;
     server_name _;
     root /var/www/html/public;
     index index.php index.html;
     client_max_body_size 20M;
 
-    # SSL Configuration
-    ssl_certificate /etc/nginx/ssl/cert.pem;
-    ssl_certificate_key /etc/nginx/ssl/key.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
+    # Use Docker's embedded DNS resolver so upstream hostnames (e.g. reverb)
+    # are re-resolved when containers restart.
+    resolver 127.0.0.11 valid=10s ipv6=off;
 
-    # Proxy WebSocket requests to Reverb container
+    gzip            on;
+    gzip_vary       on;
+    gzip_comp_level 6;
+    gzip_types      text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+    gzip_min_length 256;
+
+    # WebSocket proxy to Reverb. Variable forces per-request DNS re-resolve.
     location /app/ {
-        proxy_pass http://reverb_backend;
+        set $reverb_upstream http://reverb:8080;
+        proxy_pass $reverb_upstream;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -831,7 +808,80 @@ server {
         proxy_read_timeout 86400;
     }
 
-    # PHP Application
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~ \.php$ {
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass 127.0.0.1:9000;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+        # Cloudflare delivers HTTPS to users; mark PHP as HTTPS.
+        fastcgi_param HTTPS on;
+    }
+
+    location ~* ^/storage/attachment/ {
+        expires 1M;
+        access_log off;
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location ~* ^/(?:css|js)/.*\.(?:css|js)$ {
+        expires 2d;
+        access_log off;
+        add_header Cache-Control "public, must-revalidate";
+    }
+
+    location ^~ /build/ {
+        expires 1y;
+        access_log off;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location ~ /\. {
+        deny all;
+    }
+}
+
+# HTTPS on port 8443 — emergency LAN access only (accept the cert warning).
+server {
+    listen 8443 ssl;
+    http2 on;
+    server_name _;
+    root /var/www/html/public;
+    index index.php index.html;
+    client_max_body_size 20M;
+
+    gzip            on;
+    gzip_vary       on;
+    gzip_comp_level 6;
+    gzip_types      text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;
+    gzip_min_length 256;
+
+    ssl_certificate /etc/nginx/ssl/cert.pem;
+    ssl_certificate_key /etc/nginx/ssl/key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    location /app/ {
+        set $reverb_upstream http://reverb:8080;
+        proxy_pass $reverb_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+    }
+
     location / {
         try_files $uri $uri/ /index.php?$query_string;
     }
@@ -846,7 +896,6 @@ server {
         fastcgi_param HTTPS on;
     }
 
-    # Static assets
     location ~* ^/storage/attachment/ {
         expires 1M;
         access_log off;
@@ -859,7 +908,6 @@ server {
         add_header Cache-Control "public, must-revalidate";
     }
 
-    # Security
     location ~ /\. {
         deny all;
     }
@@ -916,8 +964,6 @@ EOF
 generate_docker_compose() {
     log_step "Generating Docker Compose Configuration"
 
-    # Detect Docker socket GID for permission handling
-    # This allows the app container to communicate with Docker daemon
     local DOCKER_GID
     if [ -S "/var/run/docker.sock" ]; then
         DOCKER_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo "999")
@@ -937,13 +983,12 @@ services:
     image: treescout-app
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8443:8080"  # HTTPS on standard port
+      - "0.0.0.0:8080:8080"  # HTTP — Cloudflare tunnel origin (tunnel handles TLS)
+      - "127.0.0.1:8443:8443"  # HTTPS — emergency LAN access only
     environment:
       - PUID=33
       - PGID=33
-      # Docker GID for socket access (enables sibling container spawning)
       - DOCKER_GID=${DOCKER_GID}
-      # Host path for DooD volume mounting
       - HOST_SRC_PATH=${PWD}/src
       - PHP_MEMORY_LIMIT=512M
       - PHP_OPCACHE_ENABLE=1
@@ -953,10 +998,6 @@ services:
       - ./src:/var/www/html
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./nginx/ssl:/etc/nginx/ssl
-      # DOCKER-OUTSIDE-OF-DOCKER (Sibling Container Architecture)
-      # Mount Docker socket to allow app container to spawn sibling containers
-      # Used by EmailMigration module for spinning up temporary test mail servers
-      # This enables "docker run" commands from within the app container
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       db:
@@ -966,7 +1007,7 @@ services:
     networks:
       - fs-net
     healthcheck:
-      test: ["CMD", "curl", "-fk", "https://localhost:8080"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -975,7 +1016,6 @@ services:
   db:
     image: mariadb:10.6
     restart: unless-stopped
-    # Use mariadbd with SSL explicitly disabled to fix "SSL is required" error
     command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW --innodb-file-per-table=1 --skip-innodb-read-only-compressed --skip-ssl --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MARIADB_ROOT_PASSWORD: \${DB_ROOT_PASSWORD}
@@ -1018,6 +1058,26 @@ services:
       - redis
     networks:
       - fs-net
+    healthcheck:
+      disable: true
+
+  queue-billing:
+    image: treescout-app
+    restart: always
+    command: php artisan queue:work --queue=billing --sleep=3 --tries=3 --max-time=3600
+    environment:
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_OPCACHE_ENABLE=1
+    volumes:
+      - ./src:/var/www/html
+    depends_on:
+      - app
+      - db
+      - redis
+    networks:
+      - fs-net
+    healthcheck:
+      disable: true
 
   cron:
     image: treescout-app
@@ -1036,6 +1096,8 @@ services:
       - redis
     networks:
       - fs-net
+    healthcheck:
+      disable: true
 
   reverb:
     image: treescout-app
@@ -1059,29 +1121,8 @@ services:
       - redis
     networks:
       - fs-net
-
-  reverb:
-    image: treescout-app
-    restart: unless-stopped
-    command: >
-      sh -c '
-      while [ ! -f /var/www/html/vendor/autoload.php ]; do
-        echo "Waiting for composer dependencies to be installed...";
-        sleep 5;
-      done;
-      echo "Dependencies ready, starting Reverb...";
-      php artisan reverb:start --host="0.0.0.0" --port=8080
-      '
-    ports:
-      - "6001:8080"
-    volumes:
-      - ./src:/var/www/html
-    depends_on:
-      - app
-      - db
-      - redis
-    networks:
-      - fs-net
+    healthcheck:
+      disable: true
 
 networks:
   fs-net:
@@ -1102,33 +1143,83 @@ generate_update_script() {
 
     cat > update.sh <<EOF
 #!/usr/bin/env bash
+#===============================================================================
+# TreeScout Zero-Downtime Update Script (generated by docker_deploy.sh)
+#===============================================================================
 set -euo pipefail
 
-echo "🔄 Updating TreeScout (${GIT_BRANCH})..."
+readonly GREEN='\\\033[38;5;46m'
+readonly CYAN='\\\033[38;5;51m'
+readonly YELLOW='\\\033[38;5;226m'
+readonly NC='\\\033[0m'
 
+log_step() { echo -e "\n\${CYAN}➜\${NC} \$*"; }
+log_ok()   { echo -e "\${GREEN}✔\${NC} \$*"; }
+log_warn() { echo -e "\${YELLOW}⚠\${NC} \$*"; }
+
+CD_HERE=\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)
+cd "\$CD_HERE"
+
+run_artisan() {
+    local desc="\$1"; shift
+    log_step "\$desc"
+    if ! sudo docker compose exec -T app php artisan "\$@"; then
+        log_warn "Artisan step failed: php artisan \$*"
+        sudo docker compose exec -T app php artisan up 2>/dev/null || true
+        exit 1
+    fi
+}
+
+# ── 1. Maintenance Mode ───────────────────────────────────────────────────────
+log_step "Entering maintenance mode (users will see 503)..."
+sudo docker compose exec -T app php artisan down --retry=60 2>/dev/null || log_warn "Could not enter maintenance mode (first deploy?)"
+
+# ── 2. Pull Latest Code ───────────────────────────────────────────────────────
+log_step "Pulling latest source code..."
 cd src
-git fetch origin
-git checkout ${GIT_BRANCH}
 git pull origin ${GIT_BRANCH}
+git submodule update --init --recursive
 cd ..
 
-echo "🐳 Rebuilding containers..."
+# ── 3. Rebuild & Restart Containers ──────────────────────────────────────────
+log_step "Rebuilding application image..."
 sudo docker compose build app
-sudo docker compose up -d
 
-echo "🗄️  Running migrations..."
-sudo docker compose exec -T app php artisan migrate --force
+log_step "Restarting app and worker containers (DB/Redis stay up)..."
+sudo docker compose up -d --no-deps app queue queue-billing cron reverb
 
-echo "📦 Installing dependencies..."
-sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer update --no-dev --optimize-autoloader
+sudo docker compose exec -T app php artisan down --retry=60 2>/dev/null || true
+
+# ── 4. Install Dependencies ───────────────────────────────────────────────────
+log_step "Installing Composer dependencies (locked versions)..."
+sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer install --no-dev --optimize-autoloader
+
+log_step "Building frontend assets..."
 sudo docker compose exec -T app npm install
 sudo docker compose exec -T app npm run build
 
-echo "🧹 Clearing caches..."
-sudo docker compose exec -T app php artisan optimize:clear
-sudo docker compose exec -T app php artisan treescout:clear-cache
+# ── 5. Run Migrations ─────────────────────────────────────────────────────────
+run_artisan "Running core migrations..." migrate --force
+run_artisan "Running module migrations..." module:migrate --all --force
 
-echo "✅ Update complete!"
+# ── 6. Warm Caches ────────────────────────────────────────────────────────────
+run_artisan "Caching configuration..." config:cache
+run_artisan "Caching routes..." route:cache
+run_artisan "Caching Blade views..." view:cache
+run_artisan "Caching event/listener map..." event:cache
+
+# ── 7. Restart Queue Workers ──────────────────────────────────────────────────
+run_artisan "Signalling queue workers to restart..." queue:restart
+
+# ── 8. Go Live ───────────────────────────────────────────────────────────────
+log_step "Exiting maintenance mode — site is live!"
+sudo docker compose exec -T app php artisan up
+
+log_step "Pruning unused Docker layers..."
+sudo docker image prune -f >/dev/null 2>&1 || true
+
+APP_URL=\$(grep "^APP_URL=" src/.env | cut -d'=' -f2)
+log_ok "Update complete! App is live at \${APP_URL}"
 EOF
 
     chmod +x update.sh
@@ -1278,6 +1369,11 @@ GOOGLE_ALLOWED_DOMAINS="${GOOGLE_ALLOWED_DOMAINS:-}"
 EOF
     fi
 
+    # Trust Cloudflare proxies — required for correct HTTPS detection behind the tunnel.
+    # Without this, APP_URL uses https:// but the app sees plain HTTP from cloudflared,
+    # causing session cookie samesite failures and mixed-content issues.
+    grep -q "^TRUSTED_PROXIES=" "$env_file" || echo "TRUSTED_PROXIES=*" >> "$env_file"
+
     # Action1 RMM (if configured)
     if [ -n "${ACTION1_SYNC_CLIENT_ID:-}" ] || [ -n "${ACTION1_AUTOMATION_RUNNER_CLIENT_ID:-}" ] || [ -n "${ACTION1_SCRIPT_MANAGER_CLIENT_ID:-}" ]; then
         cat >> "$env_file" <<EOF
@@ -1400,35 +1496,70 @@ patch_database_seeder() {
     log_success "DatabaseSeeder patched"
 }
 
+sync_modules_statuses() {
+    log_step "Syncing modules_statuses.json to installed modules"
+
+    local statuses_file="$DEFAULT_INSTALL_DIR/src/modules_statuses.json"
+    local json="{"
+    local first=true
+
+    if [ -d "$DEFAULT_INSTALL_DIR/src/Modules" ]; then
+        for module_dir in "$DEFAULT_INSTALL_DIR/src/Modules"/*/; do
+            [ -d "$module_dir" ] || continue
+            local module_name
+            module_name=$(basename "$module_dir")
+            if [ "$first" = true ]; then
+                json+="\"${module_name}\": true"
+                first=false
+            else
+                json+=", \"${module_name}\": true"
+            fi
+        done
+    fi
+
+    json+="}"
+    echo "$json" > "$statuses_file"
+    log_success "modules_statuses.json updated"
+}
+
+dump_failure_diagnostics() {
+    log_warning "Collecting diagnostics..."
+    sudo docker compose ps || true
+    echo ""
+    log_warning "Last 80 lines of app logs"
+    sudo docker compose logs --tail=80 app || true
+    echo ""
+    log_warning "Last 80 lines of Laravel log"
+    sudo docker compose exec -T app sh -c 'if [ -f /var/www/html/storage/logs/laravel.log ]; then tail -n 80 /var/www/html/storage/logs/laravel.log; else echo "No laravel.log present"; fi' || true
+}
+
+run_artisan_step() {
+    local description="$1"
+    shift
+    log_info "$description"
+    if ! sudo docker compose exec -T app php artisan "$@"; then
+        log_error "Failed artisan step: php artisan $*"
+        dump_failure_diagnostics
+        return 1
+    fi
+}
+
 build_and_launch_containers() {
     log_step "Building & Launching Docker Containers"
 
     log_info "Stopping any existing containers..."
     sudo docker compose down --remove-orphans 2>/dev/null || true
 
-    # Check and free ports 80 and 443
-    for port in 80 443; do
-        if sudo ss -lptn "sport = :$port" | grep -q ":$port"; then
-            log_warning "Port $port is in use. Attempting to release..."
-            if command_exists fuser; then
-                sudo fuser -k -n tcp "$port" >/dev/null 2>&1 || true
-            else
-                # Fallback to kill if fuser is missing
-                pids=$(sudo ss -lptn "sport = :$port" | grep -o 'pid=[0-9]*' | cut -d= -f2)
-                if [ -n "$pids" ]; then
-                    echo "$pids" | xargs -r sudo kill -9 >/dev/null 2>&1 || true
-                fi
-            fi
-        fi
-    done
-
     log_info "Building application image (with BuildKit)..."
     sudo docker compose build app
 
-    log_info "Starting all services..."
-    sudo docker compose up -d
+    # Start only core services — queue workers and cron are deferred until AFTER
+    # migrations run. Starting them now would crash because jobs/failed_jobs
+    # tables don't exist yet.
+    log_info "Starting core services (db, redis, app, reverb)..."
+    sudo docker compose up -d --force-recreate --remove-orphans db redis app reverb
 
-    log_success "Containers launched"
+    log_success "Core containers launched (queue workers will start after migrations)"
 }
 
 wait_for_database() {
@@ -1451,6 +1582,31 @@ wait_for_database() {
     log_error "Database failed to become ready"
     log_error "Check docker logs: sudo docker compose logs db"
     exit 1
+}
+
+wait_for_app_database_connectivity() {
+    log_step "Validating App -> DB Connectivity"
+
+    local max_attempts=30
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        if sudo docker compose exec -T app php -r '
+            $dsn = "mysql:host=" . getenv("DB_HOST") . ";port=" . getenv("DB_PORT") . ";dbname=" . getenv("DB_DATABASE");
+            new PDO($dsn, getenv("DB_USERNAME"), getenv("DB_PASSWORD"));
+            echo "ok";
+        ' >/dev/null 2>&1; then
+            log_success "App container can connect to database"
+            return 0
+        fi
+
+        ((attempt++))
+        echo -ne "\r${CYAN}⏳${NC} Attempt $attempt/$max_attempts..."
+        sleep 2
+    done
+
+    log_error "App container could not connect to database"
+    return 1
 }
 
 install_dependencies() {
@@ -1484,56 +1640,77 @@ install_dependencies() {
 finalize_installation() {
     log_step "Finalizing Installation"
 
-    log_info "Generating application key..."
-    sudo docker compose exec -T app php artisan key:generate
-
-    if [ "$REUSE_DB" = true ]; then
-        log_info "Running migrations on existing database..."
-        sudo docker compose exec -T app php artisan migrate --force
+    # ── APP_KEY ────────────────────────────────────────────────────────────────
+    # Generate only if not already set. On redeploy, preserving the existing key
+    # keeps active sessions and encrypted DB values (e.g. mailbox passwords) intact.
+    local current_key
+    current_key=$(grep "^APP_KEY=" "$DEFAULT_INSTALL_DIR/src/.env" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+    if [ -z "$current_key" ] && [ -n "${EXISTING_APP_KEY:-}" ]; then
+        log_info "Restoring APP_KEY from previous installation to preserve sessions..."
+        sed -i "s|^APP_KEY=.*|APP_KEY=${EXISTING_APP_KEY}|" "$DEFAULT_INSTALL_DIR/src/.env"
+    elif [ -z "$current_key" ]; then
+        run_artisan_step "Generating application key..." key:generate
     else
-        log_info "Installing TreeScout..."
-        sudo docker compose exec -T app php artisan treescout:install \
+        log_info "APP_KEY already set — skipping key:generate to preserve sessions"
+    fi
+
+    # ── Maintenance Mode ───────────────────────────────────────────────────────
+    log_info "Entering maintenance mode..."
+    sudo docker compose exec -T app php artisan down --retry=60 2>/dev/null || true
+
+    # ── Migrations ────────────────────────────────────────────────────────────
+    if [ "$REUSE_DB" = true ]; then
+        run_artisan_step "Running core migrations..." migrate --force || {
+            sudo docker compose exec -T app php artisan up 2>/dev/null || true
+            return 1
+        }
+    else
+        log_info "Running fresh FreeScout installation..."
+        if ! sudo docker compose exec -T app php artisan freescout:install \
             --force \
             --email="$ADMIN_EMAIL" \
             --password="$ADMIN_PASS" \
-            --first_name="Admin" \
-            --last_name="User"
+            --first_name="${ADMIN_FIRST_NAME:-Admin}" \
+            --last_name="${ADMIN_LAST_NAME:-User}"; then
+            log_error "Failed artisan step: php artisan freescout:install"
+            sudo docker compose exec -T app php artisan up 2>/dev/null || true
+            dump_failure_diagnostics
+            return 1
+        fi
     fi
 
-    if [ ${#MODULES_TO_INSTALL[@]} -gt 0 ]; then
-        log_info "Running module migrations..."
-        sudo docker compose exec -T app php artisan module:migrate --all --force
+    run_artisan_step "Running module migrations..." module:migrate --all --force || {
+        sudo docker compose exec -T app php artisan up 2>/dev/null || true
+        return 1
+    }
 
-        log_info "Seeding modules..."
-        echo '
-$modules = Module::all();
-foreach($modules as $module) {
-    if (!$module->isEnabled()) continue;
-    echo "Seeding " . $module->getName() . "...\n";
-    Artisan::call("module:seed", ["module" => $module->getName(), "--force" => true]);
-}
-' | sudo docker compose exec -T app php artisan tinker
-    else
-        log_info "No modules to migrate."
-    fi
+    # ── Seeding ───────────────────────────────────────────────────────────────
+    log_info "Seeding modules..."
+    sudo docker compose exec -T app php artisan module:seed --all --force || true
 
-    log_info "Seeding themes..."
-    sudo docker compose exec -T app php artisan db:seed --class=ThemeSeeder --force
+    run_artisan_step "Seeding themes..." db:seed --class=ThemeSeeder --force
 
     if [ "${SEED_SAMPLE_DATA:-false}" = true ]; then
-        log_info "Seeding sample data..."
-        sudo docker compose exec -T app php artisan db:seed --class=DatabaseSeeder --force
-
+        run_artisan_step "Seeding sample data..." db:seed --class=DatabaseSeeder --force
         log_info "Cleaning up dev dependencies..."
         sudo docker compose exec -e COMPOSER_PROCESS_TIMEOUT=2000 -T app composer install --no-dev --optimize-autoloader
     fi
 
-    # Seed default users for all roles
-    log_info "Seeding default users (Admin, Agent, Finance, Reporter)..."
-    sudo docker compose exec -T app php artisan db:seed --class=UserSeeder --force
+    run_artisan_step "Seeding default users..." db:seed --class=UserSeeder --force
 
-    # Configure git safe directory
-    cd "$DEFAULT_INSTALL_DIR"
+    # ── Cache Warming ──────────────────────────────────────────────────────────
+    run_artisan_step "Caching configuration..." config:cache
+    run_artisan_step "Caching routes..." route:cache
+    run_artisan_step "Caching Blade views..." view:cache
+    run_artisan_step "Caching event/listener map..." event:cache
+
+    # ── Queue Restart ─────────────────────────────────────────────────────────
+    run_artisan_step "Signalling queue workers to restart..." queue:restart || true
+
+    # ── Back Online ───────────────────────────────────────────────────────────
+    log_info "Exiting maintenance mode..."
+    sudo docker compose exec -T app php artisan up
+
     sudo git config --global --add safe.directory "$DEFAULT_INSTALL_DIR/src"
 
     log_success "Installation finalized"
@@ -1580,12 +1757,16 @@ show_completion_message() {
     echo -e "    ${YELLOW}cd $DEFAULT_INSTALL_DIR/src/deployment/docker/cloudflared${NC}"
     echo -e "    ${YELLOW}echo CF_TUNNEL_TOKEN=\$CF_TUNNEL_TOKEN > .env${NC}"
     echo -e "    ${YELLOW}docker compose up -d${NC}"
+    echo -e "  In Cloudflare Zero Trust, point the tunnel hostname to:"
+    echo -e "    ${YELLOW}Service Type: HTTP  (not HTTPS — tunnel handles TLS)${NC}"
+    echo -e "    ${YELLOW}URL:          http://localhost:8080${NC}"
     echo -e "  See deployment/docker/cloudflared/README.md for full setup instructions."
     echo ""
     echo -e "${CYAN}Next Steps:${NC}"
     echo -e "  • To update: ${YELLOW}cd $DEFAULT_INSTALL_DIR && sudo ./update.sh${NC}"
     echo -e "  • View logs: ${YELLOW}sudo docker compose logs -f${NC}"
     echo -e "  • Stop:      ${YELLOW}sudo docker compose down${NC}"
+    echo -e "  • Emergency: ${YELLOW}https://<server-ip>:8443${NC} (accept cert warning) or ${YELLOW}http://<server-ip>:8080${NC}"
     echo ""
 }
 
@@ -1641,16 +1822,24 @@ main() {
     clone_or_update_repo
     configure_laravel
     install_modules
+    sync_modules_statuses
     patch_modules
     patch_database_seeder
     setup_storage_permissions
     build_and_launch_containers
     wait_for_database
+    wait_for_app_database_connectivity
     install_dependencies
     finalize_installation
+
+    # Queue workers and cron are safe to start now — all migrations have run,
+    # config cache is warm, and the jobs/failed_jobs tables exist.
+    log_step "Starting Queue Workers & Cron"
+    sudo docker compose up -d queue queue-billing cron
+    log_success "Queue workers and cron scheduler started"
+
     deploy_cloudflared
 
-    # Cleanup and success
     log_info "Pruning unused Docker resources..."
     sudo docker image prune -f >/dev/null 2>&1 || true
 
