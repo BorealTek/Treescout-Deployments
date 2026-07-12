@@ -470,7 +470,7 @@ validate_config() {
         local value="${2:-}"
         if [ -z "$value" ]; then
             log_error "Required field not set: $label"
-            ((errors++))
+            errors=$(( errors + 1 ))
         else
             log_success "$label: set"
         fi
@@ -827,18 +827,18 @@ load_existing_credentials() {
 
     # Load Docker .env credentials
     if [ -f "$env_file" ]; then
-        DB_PASS=$(grep "^DB_PASSWORD=" "$env_file" | cut -d '=' -f2 || echo "")
-        DB_ROOT_PASS=$(grep "^DB_ROOT_PASSWORD=" "$env_file" | cut -d '=' -f2 || echo "")
-        DB_USER=$(grep "^DB_USER=" "$env_file" | cut -d '=' -f2 || echo "")
-        DB_NAME=$(grep "^DB_DATABASE=" "$env_file" | cut -d '=' -f2 || echo "")
+        DB_PASS=$(grep "^DB_PASSWORD=" "$env_file" | cut -d '=' -f2- || echo "")
+        DB_ROOT_PASS=$(grep "^DB_ROOT_PASSWORD=" "$env_file" | cut -d '=' -f2- || echo "")
+        DB_USER=$(grep "^DB_USER=" "$env_file" | cut -d '=' -f2- || echo "")
+        DB_NAME=$(grep "^DB_DATABASE=" "$env_file" | cut -d '=' -f2- || echo "")
     fi
 
     # Load Laravel .env credentials
     local laravel_env="$DEFAULT_INSTALL_DIR/src/.env"
     if [ -f "$laravel_env" ]; then
         local existing_email existing_pass
-        existing_email=$(grep "^ADMIN_EMAIL=" "$laravel_env" | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
-        existing_pass=$(grep "^ADMIN_PASSWORD=" "$laravel_env" | cut -d '=' -f2 | tr -d '"' | tr -d "'" || echo "")
+        existing_email=$(grep "^ADMIN_EMAIL=" "$laravel_env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || echo "")
+        existing_pass=$(grep "^ADMIN_PASSWORD=" "$laravel_env" | cut -d '=' -f2- | tr -d '"' | tr -d "'" || echo "")
 
         if [ -n "$existing_email" ]; then ADMIN_EMAIL=$existing_email; fi
         if [ -n "$existing_pass" ]; then
@@ -1411,6 +1411,8 @@ sudo docker compose exec -T app npm run build
 # ── 5. Run Migrations ─────────────────────────────────────────────────────────
 run_artisan "Running core migrations..." migrate --force
 run_artisan "Running module migrations..." module:migrate --all --force
+log_step "Seeding module defaults (non-destructive)..."
+sudo docker compose exec -T app php artisan module:seed --all --force || true
 
 # ── 6. Warm Caches ────────────────────────────────────────────────────────────
 run_artisan "Caching configuration..." config:cache
@@ -1784,7 +1786,7 @@ wait_for_database() {
             return 0
         fi
 
-        ((attempt++))
+        attempt=$(( attempt + 1 ))
         echo -ne "\r${CYAN}⏳${NC} Attempt $attempt/$max_attempts..."
         sleep 2
     done
@@ -1801,16 +1803,18 @@ wait_for_app_database_connectivity() {
     local attempt=0
 
     while [ $attempt -lt $max_attempts ]; do
-        if sudo docker compose exec -T app php -r '
-            $dsn = "mysql:host=" . getenv("DB_HOST") . ";port=" . getenv("DB_PORT") . ";dbname=" . getenv("DB_DATABASE");
-            new PDO($dsn, getenv("DB_USERNAME"), getenv("DB_PASSWORD"));
-            echo "ok";
-        ' >/dev/null 2>&1; then
+        # Credentials are injected from the script's environment because bare php -r
+        # does not load Laravel's .env via phpdotenv — only the framework does.
+        if sudo docker compose exec -T app php -r "
+            \$dsn = 'mysql:host=db;port=3306;dbname=${DB_NAME}';
+            new PDO(\$dsn, '${DB_USER}', '${DB_PASS}');
+            echo 'ok';
+        " >/dev/null 2>&1; then
             log_success "App container can connect to database"
             return 0
         fi
 
-        ((attempt++))
+        attempt=$(( attempt + 1 ))
         echo -ne "\r${CYAN}⏳${NC} Attempt $attempt/$max_attempts..."
         sleep 2
     done
@@ -2002,7 +2006,7 @@ check_only_report() {
             printf "  ${ok} %-20s %s\n" "$label" "${value:0:60}"
         elif [ "$required" = "true" ]; then
             printf "  ${fail} %-20s %s\n" "$label" "(not set — required)"
-            ((errors++))
+            errors=$(( errors + 1 ))
         else
             printf "  ${warn} %-20s %s\n" "$label" "(not set — optional)"
         fi
@@ -2013,7 +2017,7 @@ check_only_report() {
         echo -e "  ${ok} File exists"
     else
         echo -e "  ${fail} File not found"
-        ((errors++))
+        errors=$(( errors + 1 ))
     fi
     echo ""
 
@@ -2062,7 +2066,7 @@ check_only_report() {
             printf "  ${ok} %-20s %s\n" "Auth" "OK (user: $gh_user)"
         else
             printf "  ${fail} %-20s %s\n" "Auth" "FAILED — token may be invalid or network unavailable"
-            ((errors++))
+            errors=$(( errors + 1 ))
         fi
         echo ""
     fi
@@ -2091,9 +2095,15 @@ main() {
 
     show_banner
 
-    # Config must be loaded early so --check can report on it
     preflight_checks
     load_or_create_config
+
+    # ── --check mode: validate and report, then exit ──────────────────────────
+    # Run BEFORE applying defaults so the report reflects what is actually in the
+    # config file — not auto-generated values that the operator has never seen.
+    if [ "$CHECK_ONLY" = true ]; then
+        check_only_report
+    fi
 
     # Set defaults for credentials (only used if not in config)
     DB_ROOT_PASS="${DB_ROOT_PASS:-$(openssl rand -hex 16)}"
@@ -2102,11 +2112,6 @@ main() {
     DB_NAME="${DB_NAME:-treescout}"
     ADMIN_EMAIL="${ADMIN_EMAIL:-admin@treescout.local}"
     ADMIN_PASS="${ADMIN_PASS:-$(openssl rand -hex 12)}"
-
-    # ── --check mode: validate and report, then exit ──────────────────────────
-    if [ "$CHECK_ONLY" = true ]; then
-        check_only_report
-    fi
 
     check_existing_installation
     interactive_setup
@@ -2185,7 +2190,8 @@ deploy_cloudflared() {
 
         if [ "$do_deploy_cf" = true ]; then
             log_info "Deploying standalone Cloudflare Tunnel..."
-            local cf_dir="$DEFAULT_INSTALL_DIR/src/deployment/docker/cloudflared"
+            # SCRIPT_DIR is this script's directory (docker/); cloudflared is a sibling.
+            local cf_dir="${SCRIPT_DIR}/cloudflared"
             if [ -d "$cf_dir" ]; then
                 cd "$cf_dir"
                 echo "CF_TUNNEL_TOKEN=\"${CF_TUNNEL_TOKEN}\"" > .env
