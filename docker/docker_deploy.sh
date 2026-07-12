@@ -1150,24 +1150,19 @@ generate_ssl_certificates() {
 generate_docker_env() {
     log_step "Generating Docker Environment File"
 
+    # Only the four MARIADB_* vars in docker-compose.yml reference this file
+    # (escaped as \${...} in the heredoc). Everything else — App URL, Redis,
+    # Google OAuth, REPO_TOKEN — belongs in src/.env (the Laravel .env) which
+    # configure_laravel() writes. Writing secrets here would expose them in a
+    # file with no runtime purpose and no chmod applied.
     cat > .env <<EOF
 DB_ROOT_PASSWORD=${DB_ROOT_PASS}
 DB_DATABASE=${DB_NAME}
 DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASS}
-APP_URL=https://${DOMAIN_NAME}
-REDIS_HOST=redis
-REDIS_PASSWORD=null
-REDIS_PORT=6379
-GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
-GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-GOOGLE_REDIRECT_URI=https://${DOMAIN_NAME}/auth/google/callback
 EOF
 
-    # Pass through any environment variables ending in _TOKEN, _KEY, or _SECRET
-    # This allows passing git access tokens for modules
-    env | grep -E '(_TOKEN|_KEY|_SECRET)=' | grep -vE '^(DB_|APP_|REDIS_|GOOGLE_|REVERB_|TUNNEL_)' >> .env || true
-
+    chmod 600 .env
     log_success "Docker .env generated"
 }
 
