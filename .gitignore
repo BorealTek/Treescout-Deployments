@@ -4,6 +4,9 @@ linux/deploy\ copy.conf
 linux/deploy*.conf
 !linux/deploy.conf.example
 
+# Auto-generated secrets (lives at $DEFAULT_INSTALL_DIR/secrets.env on the server)
+secrets.env
+
 # Ignore SSL certificates generated during deployment
 nginx/ssl/
 *.pem

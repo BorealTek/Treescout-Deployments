@@ -62,7 +62,7 @@ CLEANUP_NEEDED=false
 # To deploy a subset of modules for a specific client, edit deploy.conf:
 #   MODULES_TO_INSTALL=(
 #       "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
-#       "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+#       "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
 #       ... only what the client needs ...
 #   )
 #
@@ -77,17 +77,10 @@ MODULES_TO_INSTALL=(
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
     "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
-    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
-    "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
-    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
-    "MiddleMan|https://github.com/BorealTek/Treescout-MiddleMan.git|REPO_TOKEN|main"
-    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
-    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
-    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
 
@@ -318,10 +311,8 @@ create_config_template() {
     local repo="${GIT_REPO_URL:-$DEFAULT_REPO}"
     local branch="${GIT_BRANCH:-$DEFAULT_BRANCH}"
 
-    # Generate secure random passwords for the template
-    local db_root_pass db_pass admin_pass
-    db_root_pass=$(openssl rand -hex 16 2>/dev/null || echo "CHANGE_ME_root_$(date +%s)")
-    db_pass=$(openssl rand -hex 16 2>/dev/null || echo "CHANGE_ME_app_$(date +%s)")
+    # Generate admin password for the template (DB passwords go into secrets.env, not deploy.conf)
+    local admin_pass
     admin_pass=$(openssl rand -hex 12 2>/dev/null || echo "CHANGE_ME_admin_$(date +%s)")
 
     # Build MODULES_TO_INSTALL block from current array (or use default full set)
@@ -338,16 +329,9 @@ create_config_template() {
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
     "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
-    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
-    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
-    "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
-    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
-    "MiddleMan|https://github.com/BorealTek/Treescout-MiddleMan.git|REPO_TOKEN|main"
-    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
-    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 '
@@ -375,12 +359,14 @@ DOMAIN_NAME=""
 # Docker bridge subnet — must not conflict with your LAN
 DOCKER_SUBNET="172.20.0.0/16"
 
-# ── DATABASE ──────────────────────────────────────────────────────────────────
+# ── DATABASE (optional overrides — passwords are auto-generated in secrets.env) ──
+# Only set these if you need non-default values. DB_ROOT_PASS and DB_PASS
+# are generated securely on first deploy and stored in:
+#   ${DEFAULT_INSTALL_DIR}/secrets.env
+# View them at any time with: sudo ./docker_deploy.sh --secrets
 
-DB_ROOT_PASS="${db_root_pass}"
-DB_USER="treescout"
-DB_PASS="${db_pass}"
-DB_NAME="treescout"
+# DB_USER="treescout"
+# DB_NAME="treescout"
 
 # ── ADMIN ACCOUNT ─────────────────────────────────────────────────────────────
 
@@ -416,12 +402,6 @@ ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET=""
 ACTION1_SCRIPT_MANAGER_CLIENT_ID=""
 ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
 
-# ── OPTIONAL: KROKI DIAGRAMS ──────────────────────────────────────────────────
-
-MIDDLEMAN_KROKI_ENABLED="false"
-MIDDLEMAN_KROKI_URL="http://host.docker.internal:8001"
-MIDDLEMAN_KROKI_TIMEOUT="10"
-
 SEED_SAMPLE_DATA=false
 EOF
 
@@ -449,11 +429,10 @@ validate_config() {
 
     check_field "DOMAIN_NAME"    "${DOMAIN_NAME:-}"
     check_field "DOCKER_SUBNET"  "${DOCKER_SUBNET:-}"
-    check_field "DB_ROOT_PASS"   "${DB_ROOT_PASS:-}"
-    check_field "DB_PASS"        "${DB_PASS:-}"
     check_field "ADMIN_EMAIL"    "${ADMIN_EMAIL:-}"
     check_field "ADMIN_PASS"     "${ADMIN_PASS:-}"
     check_field "REPO_TOKEN"     "${REPO_TOKEN:-}"
+    # DB credentials and Reverb keys are guaranteed by load_or_generate_secrets()
 
     if [ $errors -gt 0 ]; then
         echo ""
@@ -499,11 +478,9 @@ DEFAULT_INSTALL_DIR="${DEFAULT_INSTALL_DIR:-/opt/treescout-docker}"
 DOMAIN_NAME="${DOMAIN_NAME:-}"
 DOCKER_SUBNET="${DOCKER_SUBNET:-}"
 
-# Database Settings
-DB_ROOT_PASS="${DB_ROOT_PASS:-}"
-DB_USER="${DB_USER:-treescout}"
-DB_PASS="${DB_PASS:-}"
-DB_NAME="${DB_NAME:-treescout}"
+# Database (optional overrides — passwords live in secrets.env, not here)
+# DB_USER="${DB_USER:-treescout}"
+# DB_NAME="${DB_NAME:-treescout}"
 
 # Admin User
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
@@ -522,11 +499,6 @@ ACTION1_AUTOMATION_RUNNER_CLIENT_ID="${ACTION1_AUTOMATION_RUNNER_CLIENT_ID:-}"
 ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET="${ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET:-}"
 ACTION1_SCRIPT_MANAGER_CLIENT_ID="${ACTION1_SCRIPT_MANAGER_CLIENT_ID:-}"
 ACTION1_SCRIPT_MANAGER_CLIENT_SECRET="${ACTION1_SCRIPT_MANAGER_CLIENT_SECRET:-}"
-
-# Kroki (Optional)
-MIDDLEMAN_KROKI_ENABLED="${MIDDLEMAN_KROKI_ENABLED:-false}"
-MIDDLEMAN_KROKI_URL="${MIDDLEMAN_KROKI_URL:-http://host.docker.internal:8001}"
-MIDDLEMAN_KROKI_TIMEOUT="${MIDDLEMAN_KROKI_TIMEOUT:-10}"
 
 # Sample Data Seeding
 SEED_SAMPLE_DATA=${SEED_SAMPLE_DATA:-false}
@@ -772,17 +744,8 @@ check_existing_installation() {
 }
 
 load_existing_credentials() {
-    local env_file=$1
-
-    # Load Docker .env credentials
-    if [ -f "$env_file" ]; then
-        DB_PASS=$(grep "^DB_PASSWORD=" "$env_file" | cut -d '=' -f2- || echo "")
-        DB_ROOT_PASS=$(grep "^DB_ROOT_PASSWORD=" "$env_file" | cut -d '=' -f2- || echo "")
-        DB_USER=$(grep "^DB_USER=" "$env_file" | cut -d '=' -f2- || echo "")
-        DB_NAME=$(grep "^DB_DATABASE=" "$env_file" | cut -d '=' -f2- || echo "")
-    fi
-
-    # Load Laravel .env credentials
+    # Preserve admin credentials from an existing installation across re-deploys.
+    # DB credentials are now managed by load_or_generate_secrets() via secrets.env.
     local laravel_env="$DEFAULT_INSTALL_DIR/src/.env"
     if [ -f "$laravel_env" ]; then
         local existing_email existing_pass
@@ -795,6 +758,110 @@ load_existing_credentials() {
             ADMIN_PASS_PRESERVED=true
         fi
     fi
+}
+
+load_or_generate_secrets() {
+    local secrets_file="$DEFAULT_INSTALL_DIR/secrets.env"
+
+    # Source existing secrets first
+    if [ -f "$secrets_file" ]; then
+        # shellcheck disable=SC1090
+        source "$secrets_file"
+    else
+        # Migration path: pull DB creds from the old compose .env if present
+        local compose_env="$DEFAULT_INSTALL_DIR/.env"
+        if [ -f "$compose_env" ]; then
+            [ -z "${DB_PASS:-}" ]      && DB_PASS=$(grep "^DB_PASSWORD="     "$compose_env" | cut -d'=' -f2- || echo "")
+            [ -z "${DB_ROOT_PASS:-}" ] && DB_ROOT_PASS=$(grep "^DB_ROOT_PASSWORD=" "$compose_env" | cut -d'=' -f2- || echo "")
+            [ -z "${DB_USER:-}" ]      && DB_USER=$(grep "^DB_USER="         "$compose_env" | cut -d'=' -f2- || echo "")
+            [ -z "${DB_NAME:-}" ]      && DB_NAME=$(grep "^DB_DATABASE="     "$compose_env" | cut -d'=' -f2- || echo "")
+        fi
+    fi
+
+    # Generate any values that are still missing
+    local updated=false
+    if [ -z "${DB_ROOT_PASS:-}" ]; then DB_ROOT_PASS=$(openssl rand -hex 16); updated=true; fi
+    if [ -z "${DB_USER:-}" ];      then DB_USER="treescout";                   updated=true; fi
+    if [ -z "${DB_PASS:-}" ];      then DB_PASS=$(openssl rand -hex 16);       updated=true; fi
+    if [ -z "${DB_NAME:-}" ];      then DB_NAME="treescout";                   updated=true; fi
+    if [ -z "${REVERB_APP_ID:-}" ];     then REVERB_APP_ID=$(openssl rand -hex 8);  updated=true; fi
+    if [ -z "${REVERB_APP_KEY:-}" ];    then REVERB_APP_KEY=$(openssl rand -hex 16); updated=true; fi
+    if [ -z "${REVERB_APP_SECRET:-}" ]; then REVERB_APP_SECRET=$(openssl rand -hex 16); updated=true; fi
+
+    if [ "$updated" = true ] || [ ! -f "$secrets_file" ]; then
+        write_secrets_file "$secrets_file"
+        log_success "Secrets saved to: $secrets_file"
+    fi
+}
+
+write_secrets_file() {
+    local secrets_file="$1"
+    mkdir -p "$(dirname "$secrets_file")"
+    cat > "$secrets_file" <<EOF
+# Treescout auto-generated secrets — do not edit manually.
+# View with: sudo $(basename "$0") --secrets
+# Last updated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+DB_ROOT_PASS=${DB_ROOT_PASS}
+DB_USER=${DB_USER}
+DB_PASS=${DB_PASS}
+DB_NAME=${DB_NAME}
+
+REVERB_APP_ID=${REVERB_APP_ID}
+REVERB_APP_KEY=${REVERB_APP_KEY}
+REVERB_APP_SECRET=${REVERB_APP_SECRET}
+EOF
+    chmod 600 "$secrets_file"
+}
+
+show_secrets() {
+    # Silently load deploy.conf to resolve DEFAULT_INSTALL_DIR overrides
+    [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE" 2>/dev/null || true
+
+    local secrets_file="$DEFAULT_INSTALL_DIR/secrets.env"
+    local laravel_env="$DEFAULT_INSTALL_DIR/src/.env"
+
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Treescout — Deployment Secrets${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    if [ ! -f "$secrets_file" ]; then
+        log_error "No secrets file found at: $secrets_file"
+        log_info "Run the deploy script once to generate secrets."
+        exit 1
+    fi
+
+    # shellcheck disable=SC1090
+    source "$secrets_file"
+
+    echo -e "${CYAN}Database:${NC}"
+    printf "  %-22s %s\n" "DB_NAME"      "${DB_NAME:-}"
+    printf "  %-22s %s\n" "DB_USER"      "${DB_USER:-}"
+    printf "  %-22s %s\n" "DB_PASS"      "${DB_PASS:-}"
+    printf "  %-22s %s\n" "DB_ROOT_PASS" "${DB_ROOT_PASS:-}"
+
+    echo ""
+    echo -e "${CYAN}WebSocket / Reverb:${NC}"
+    printf "  %-22s %s\n" "REVERB_APP_ID"     "${REVERB_APP_ID:-}"
+    printf "  %-22s %s\n" "REVERB_APP_KEY"    "${REVERB_APP_KEY:-}"
+    printf "  %-22s %s\n" "REVERB_APP_SECRET" "${REVERB_APP_SECRET:-}"
+
+    echo ""
+    echo -e "${CYAN}Laravel:${NC}"
+    if [ -f "$laravel_env" ]; then
+        local app_key
+        app_key=$(grep "^APP_KEY=" "$laravel_env" | cut -d'=' -f2- | tr -d '"' | tr -d "'" || echo "")
+        printf "  %-22s %s\n" "APP_KEY" "${app_key:-(not yet generated)}"
+    else
+        printf "  %-22s %s\n" "APP_KEY" "(deploy has not run yet)"
+    fi
+
+    echo ""
+    echo -e "${GREY}  secrets.env : $secrets_file${NC}"
+    echo -e "${GREY}  src/.env    : $laravel_env${NC}"
+    echo ""
 }
 
 #===============================================================================
@@ -1472,24 +1539,19 @@ ADMIN_LAST_NAME="${ADMIN_LAST_NAME:-Administrator}"
 
 EOF
 
-    # Reverb/Broadcasting
-    local reverb_app_id reverb_app_key reverb_app_secret
-    reverb_app_id=$(openssl rand -hex 8)
-    reverb_app_key=$(openssl rand -hex 16)
-    reverb_app_secret=$(openssl rand -hex 16)
-
+    # Reverb/Broadcasting — keys come from secrets.env (stable across re-deploys)
     cat >> "$env_file" <<EOF
 
 # Broadcasting (Reverb)
 BROADCAST_CONNECTION=reverb
-REVERB_APP_ID=${reverb_app_id}
-REVERB_APP_KEY=${reverb_app_key}
-REVERB_APP_SECRET=${reverb_app_secret}
+REVERB_APP_ID=${REVERB_APP_ID}
+REVERB_APP_KEY=${REVERB_APP_KEY}
+REVERB_APP_SECRET=${REVERB_APP_SECRET}
 REVERB_HOST="reverb"
 REVERB_PORT=8080
 REVERB_SCHEME=http
 
-VITE_REVERB_APP_KEY="${reverb_app_key}"
+VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"
 VITE_REVERB_HOST="${DOMAIN_NAME}"
 VITE_REVERB_PORT=443
 VITE_REVERB_SCHEME=https
@@ -1524,17 +1586,6 @@ ACTION1_AUTOMATION_RUNNER_CLIENT_ID="${ACTION1_AUTOMATION_RUNNER_CLIENT_ID:-}"
 ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET="${ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET:-}"
 ACTION1_SCRIPT_MANAGER_CLIENT_ID="${ACTION1_SCRIPT_MANAGER_CLIENT_ID:-}"
 ACTION1_SCRIPT_MANAGER_CLIENT_SECRET="${ACTION1_SCRIPT_MANAGER_CLIENT_SECRET:-}"
-EOF
-    fi
-
-    # Kroki diagram renderer (if enabled)
-    if [ "${MIDDLEMAN_KROKI_ENABLED:-false}" = "true" ]; then
-        cat >> "$env_file" <<EOF
-
-# Kroki
-MIDDLEMAN_KROKI_ENABLED=true
-MIDDLEMAN_KROKI_URL=${MIDDLEMAN_KROKI_URL:-http://host.docker.internal:8001}
-MIDDLEMAN_KROKI_TIMEOUT=${MIDDLEMAN_KROKI_TIMEOUT:-10}
 EOF
     fi
 
@@ -1931,11 +1982,20 @@ check_only_report() {
     echo -e "${CYAN}Required fields:${NC}"
     check_kv "DOMAIN_NAME"   "${DOMAIN_NAME:-}"
     check_kv "DOCKER_SUBNET" "${DOCKER_SUBNET:-}"
-    check_kv "DB_ROOT_PASS"  "${DB_ROOT_PASS:+set (hidden)}"
-    check_kv "DB_PASS"       "${DB_PASS:+set (hidden)}"
     check_kv "ADMIN_EMAIL"   "${ADMIN_EMAIL:-}"
     check_kv "ADMIN_PASS"    "${ADMIN_PASS:+set (hidden)}"
     check_kv "REPO_TOKEN"    "${REPO_TOKEN:+set (hidden)}"
+    echo ""
+
+    local secrets_file="$DEFAULT_INSTALL_DIR/secrets.env"
+    echo -e "${CYAN}Auto-generated secrets:${NC} (${secrets_file})"
+    if [ -f "$secrets_file" ]; then
+        printf "  ${ok} %-20s %s\n" "DB_ROOT_PASS" "set (hidden — run --secrets to view)"
+        printf "  ${ok} %-20s %s\n" "DB_PASS"      "set (hidden — run --secrets to view)"
+        printf "  ${ok} %-20s %s\n" "REVERB keys"  "set (hidden — run --secrets to view)"
+    else
+        printf "  ${warn} %-20s %s\n" "secrets.env" "not yet created — will be generated on first deploy"
+    fi
     echo ""
 
     echo -e "${CYAN}Optional fields:${NC}"
@@ -1993,16 +2053,27 @@ check_only_report() {
 main() {
     # ── Argument parsing ──────────────────────────────────────────────────────
     local CHECK_ONLY=false
+    local SHOW_SECRETS=false
     for arg in "$@"; do
         case $arg in
-            --check) CHECK_ONLY=true ;;
+            --check)   CHECK_ONLY=true ;;
+            --secrets) SHOW_SECRETS=true ;;
         esac
     done
+
+    # --secrets: silently load config for install-dir resolution, then display
+    if [ "$SHOW_SECRETS" = true ]; then
+        show_secrets
+        exit 0
+    fi
 
     show_banner
 
     preflight_checks
     load_or_create_config
+
+    # Load/generate persistent secrets (DB creds, Reverb keys) from secrets.env
+    load_or_generate_secrets
 
     # ── --check mode: validate and report, then exit ──────────────────────────
     # Run BEFORE applying defaults so the report reflects what is actually in the
@@ -2011,11 +2082,7 @@ main() {
         check_only_report
     fi
 
-    # Set defaults for credentials (only used if not in config)
-    DB_ROOT_PASS="${DB_ROOT_PASS:-$(openssl rand -hex 16)}"
-    DB_USER="${DB_USER:-treescout}"
-    DB_PASS="${DB_PASS:-$(openssl rand -hex 16)}"
-    DB_NAME="${DB_NAME:-treescout}"
+    # Non-secret defaults (secrets handled by load_or_generate_secrets above)
     ADMIN_EMAIL="${ADMIN_EMAIL:-admin@treescout.local}"
     ADMIN_PASS="${ADMIN_PASS:-$(openssl rand -hex 12)}"
 
