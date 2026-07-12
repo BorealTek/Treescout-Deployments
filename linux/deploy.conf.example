@@ -77,29 +77,14 @@ MODULES_TO_INSTALL=(
 )
 
 #===============================================================================
-# OPTIONAL — ADDITIONAL USERS
-# Only created when AGENT_PASS (or AGENT_EMAIL) is set.
-#===============================================================================
-
-AGENT_EMAIL=""
-AGENT_PASS=""
-
-FINANCE_EMAIL=""
-FINANCE_PASS=""
-
-REPORTER_EMAIL=""
-REPORTER_PASS=""
-
-#===============================================================================
-# OPTIONAL — GOOGLE OAUTH
-# Required for SSO login and GoogleAdmin module (Workspace sync).
+# OPTIONAL — GOOGLE OAUTH (SSO login for agents)
+# Enables "Login with Google" for agent accounts.
+# GoogleAdmin module credentials are configured per-client in the module UI.
 #===============================================================================
 
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
-# Comma-separated email addresses that get Google Admin API access
-GOOGLE_ADMIN_EMAILS=""
-# Comma-separated domains allowed to log in via Google SSO
+# Comma-separated domains allowed to log in via Google SSO (e.g. borealtek.ca)
 GOOGLE_ALLOWED_DOMAINS=""
 
 #===============================================================================

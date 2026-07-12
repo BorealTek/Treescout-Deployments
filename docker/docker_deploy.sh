@@ -400,20 +400,10 @@ export REPO_TOKEN=""
 MODULES_TO_INSTALL=(
 ${modules_str})
 
-# ── OPTIONAL: ADDITIONAL USERS ────────────────────────────────────────────────
-
-AGENT_EMAIL=""
-AGENT_PASS=""
-FINANCE_EMAIL=""
-FINANCE_PASS=""
-REPORTER_EMAIL=""
-REPORTER_PASS=""
-
-# ── OPTIONAL: GOOGLE OAUTH ────────────────────────────────────────────────────
+# ── OPTIONAL: GOOGLE OAUTH (SSO login for agents) ────────────────────────────
 
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
-GOOGLE_ADMIN_EMAILS=""
 GOOGLE_ALLOWED_DOMAINS=""
 
 # ── OPTIONAL: ACTION1 RMM ─────────────────────────────────────────────────────
@@ -519,18 +509,9 @@ DB_NAME="${DB_NAME:-treescout}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
 ADMIN_PASS="${ADMIN_PASS:-}"
 
-# Additional Users (Optional)
-AGENT_EMAIL="${AGENT_EMAIL:-}"
-AGENT_PASS="${AGENT_PASS:-}"
-FINANCE_EMAIL="${FINANCE_EMAIL:-}"
-FINANCE_PASS="${FINANCE_PASS:-}"
-REPORTER_EMAIL="${REPORTER_EMAIL:-}"
-REPORTER_PASS="${REPORTER_PASS:-}"
-
-# Google OAuth (Optional)
+# Google OAuth — SSO login for agents (Optional)
 GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
 GOOGLE_CLIENT_SECRET="${GOOGLE_CLIENT_SECRET:-}"
-GOOGLE_ADMIN_EMAILS="${GOOGLE_ADMIN_EMAILS:-}"
 GOOGLE_ALLOWED_DOMAINS="${GOOGLE_ALLOWED_DOMAINS:-}"
 
 # Action1 RMM (Optional)
@@ -1489,23 +1470,6 @@ ADMIN_PASSWORD="${ADMIN_PASS}"
 ADMIN_FIRST_NAME="${ADMIN_FIRST_NAME:-System}"
 ADMIN_LAST_NAME="${ADMIN_LAST_NAME:-Administrator}"
 
-# Scaffold users (agent / finance / reporter)
-# Only seeded when AGENT_PASS (or AGENT_EMAIL) is explicitly configured.
-SEED_SCAFFOLD_USERS=$([ -n "${AGENT_PASS:-}${AGENT_EMAIL:-}" ] && echo true || echo false)
-AGENT_EMAIL="${AGENT_EMAIL:-agent@example.com}"
-AGENT_PASSWORD="${AGENT_PASS:-agent123456789}"
-AGENT_FIRST_NAME="${AGENT_FIRST_NAME:-Support}"
-AGENT_LAST_NAME="${AGENT_LAST_NAME:-Agent}"
-
-FINANCE_EMAIL="${FINANCE_EMAIL:-finance@example.com}"
-FINANCE_PASSWORD="${FINANCE_PASS:-finance123456789}"
-FINANCE_FIRST_NAME="${FINANCE_FIRST_NAME:-Finance}"
-FINANCE_LAST_NAME="${FINANCE_LAST_NAME:-Manager}"
-
-REPORTER_EMAIL="${REPORTER_EMAIL:-reporter@example.com}"
-REPORTER_PASSWORD="${REPORTER_PASS:-reporter123456789}"
-REPORTER_FIRST_NAME="${REPORTER_FIRST_NAME:-Report}"
-REPORTER_LAST_NAME="${REPORTER_LAST_NAME:-Viewer}"
 EOF
 
     # Reverb/Broadcasting
@@ -1539,7 +1503,6 @@ EOF
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
 GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
 GOOGLE_REDIRECT_URI=https://${DOMAIN_NAME}/auth/google/callback
-GOOGLE_ADMIN_EMAILS="${GOOGLE_ADMIN_EMAILS:-}"
 GOOGLE_ALLOWED_DOMAINS="${GOOGLE_ALLOWED_DOMAINS:-}"
 EOF
     fi
@@ -1913,19 +1876,6 @@ show_completion_message() {
     else
         echo -e "    Pass:  ${GREEN}$ADMIN_PASS${NC}"
     fi
-
-    echo ""
-    echo -e "  ${YELLOW}Agent${NC} - Standard Support Access"
-    echo -e "    Email: ${GREEN}${AGENT_EMAIL:-agent@example.com}${NC}"
-    echo -e "    Pass:  ${GREEN}${AGENT_PASS:-agent123456789}${NC}"
-    echo ""
-    echo -e "  ${YELLOW}Finance${NC} - Billing & Invoice Access"
-    echo -e "    Email: ${GREEN}${FINANCE_EMAIL:-finance@example.com}${NC}"
-    echo -e "    Pass:  ${GREEN}${FINANCE_PASS:-finance123456789}${NC}"
-    echo ""
-    echo -e "  ${YELLOW}Reporter${NC} - Read-Only Access"
-    echo -e "    Email: ${GREEN}${REPORTER_EMAIL:-reporter@example.com}${NC}"
-    echo -e "    Pass:  ${GREEN}${REPORTER_PASS:-reporter123456789}${NC}"
 
     echo ""
     echo -e "${CYAN}Cloudflare Tunnel:${NC}"
