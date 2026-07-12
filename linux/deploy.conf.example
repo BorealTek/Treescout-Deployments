@@ -83,18 +83,12 @@ MODULES_TO_INSTALL=(
 
 AGENT_EMAIL=""
 AGENT_PASS=""
-AGENT_FIRST_NAME="Support"
-AGENT_LAST_NAME="Agent"
 
 FINANCE_EMAIL=""
 FINANCE_PASS=""
-FINANCE_FIRST_NAME="Finance"
-FINANCE_LAST_NAME="Manager"
 
 REPORTER_EMAIL=""
 REPORTER_PASS=""
-REPORTER_FIRST_NAME="Report"
-REPORTER_LAST_NAME="Viewer"
 
 #===============================================================================
 # OPTIONAL — GOOGLE OAUTH
@@ -131,22 +125,6 @@ ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
 MIDDLEMAN_KROKI_ENABLED="false"
 MIDDLEMAN_KROKI_URL="http://host.docker.internal:8001"
 MIDDLEMAN_KROKI_TIMEOUT="10"
-
-#===============================================================================
-# OPTIONAL — MAILBOX AUTO-PROVISIONING
-# If set, creates a default mailbox on fresh install.
-#===============================================================================
-
-MAILBOX_EMAIL=""
-MAILBOX_NAME=""
-MAILBOX_IMAP_HOST=""
-MAILBOX_IMAP_PORT="993"
-MAILBOX_IMAP_USER=""
-MAILBOX_IMAP_PASS=""
-MAILBOX_SMTP_HOST=""
-MAILBOX_SMTP_PORT="587"
-MAILBOX_SMTP_USER=""
-MAILBOX_SMTP_PASS=""
 
 #===============================================================================
 # OPTIONAL — SAMPLE DATA
