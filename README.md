@@ -31,7 +31,6 @@ The GHCR pre-built image (`Dockerfile.prod`) exists for CI validation and multi-
 | Ubuntu 22.04+ | Script installs Docker if missing |
 | 4 GB RAM | 2 GB minimum, 4 GB recommended |
 | `REPO_TOKEN` | GitHub PAT with `repo` scope — used to clone all private module repos |
-| `CF_TUNNEL_TOKEN` | From Cloudflare Zero Trust → Networks → Tunnels |
 
 ---
 
@@ -67,20 +66,18 @@ The script is idempotent — re-running prompts whether to keep or destroy the e
 
 ---
 
-## Cloudflare Tunnel Setup
+## Cloudflare Tunnel
 
-cloudflared runs as a **separate stack** so that `docker compose down` on the app never kills SSH or tunnel connectivity. The deployment script starts it automatically if `CF_TUNNEL_TOKEN` is set in `deploy.conf`.
+The app nginx serves plain **HTTP on port 8080** — no SSL. The Cloudflare tunnel terminates TLS at the edge and delivers plain HTTP to the origin.
 
-**Cloudflare Zero Trust → Networks → Tunnels → your tunnel → Configure → Public Hostnames:**
+Configure your tunnel public hostname as:
 
 | Hostname | Service | URL |
 |----------|---------|-----|
-| `ssh.tickets.borealtek.ca` | SSH | `localhost:22` |
 | `tickets.borealtek.ca` | **HTTP** | `localhost:8080` |
+| `ssh.tickets.borealtek.ca` | SSH | `localhost:22` |
 
-> The app nginx serves plain HTTP on 8080. The Cloudflare tunnel handles TLS between users and Cloudflare's edge — no SSL between cloudflared and origin.
-
-If cloudflared is on a **different VM** (non-standard), the app port binds to `0.0.0.0:8080` so it's reachable over the LAN. Emergency HTTPS (self-signed) is at `<server-ip>:8443`.
+The tunnel is managed externally (not started by this script). Emergency HTTPS (self-signed) is available at `<server-ip>:8443`.
 
 ---
 
@@ -93,7 +90,6 @@ ADMIN_EMAIL="scott.mcdonald@borealtek.ca"
 ADMIN_PASS="..."                       # Saved; used by freescout:install on fresh deploy
 
 export REPO_TOKEN="ghp_..."           # GitHub PAT (repo scope) for private module repos
-export CF_TUNNEL_TOKEN="eyJ..."       # Cloudflare tunnel token
 
 # Optional integrations
 GOOGLE_CLIENT_ID=""
@@ -144,7 +140,7 @@ The generated `update.sh` follows this sequence:
 
 ## Structure
 
-- `docker/` — Linux server deployer (`docker_deploy.sh`), cloudflared sidecar, kroki sidecar
+- `docker/` — Linux server deployer (`docker_deploy.sh`), kroki sidecar
 - `orbstack/` — macOS/OrbStack local dev deployer
 - `linux/` — Shared config template (`deploy.conf.example`), module manifest (`modules.manifest.json`)
 

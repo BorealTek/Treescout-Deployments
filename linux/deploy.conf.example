@@ -41,18 +41,6 @@ ADMIN_FIRST_NAME="System"
 ADMIN_LAST_NAME="Administrator"
 
 #===============================================================================
-# CLOUDFLARE TUNNEL
-#===============================================================================
-# The deploy script starts cloudflared automatically when CF_TUNNEL_TOKEN is set.
-# Get your token from: Cloudflare Zero Trust → Networks → Tunnels → your tunnel → Configure
-#
-# Tunnel public hostname config (in Cloudflare dashboard):
-#   tickets.example.com  →  HTTP  →  localhost:8080
-#   ssh.example.com      →  SSH   →  localhost:22
-
-CF_TUNNEL_TOKEN=""
-
-#===============================================================================
 # GITHUB TOKEN (required for private module repos)
 #===============================================================================
 # Create a PAT at: https://github.com/settings/tokens

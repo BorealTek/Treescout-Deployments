@@ -389,12 +389,6 @@ ADMIN_PASS="${admin_pass}"
 ADMIN_FIRST_NAME="System"
 ADMIN_LAST_NAME="Administrator"
 
-# ── CLOUDFLARE TUNNEL ─────────────────────────────────────────────────────────
-# Cloudflare Zero Trust → Networks → Tunnels → your tunnel → Configure → Token
-# Tunnel public hostname: tickets.example.com → HTTP → localhost:8080
-
-CF_TUNNEL_TOKEN=""
-
 # ── GITHUB TOKEN (required for private module repos) ─────────────────────────
 # Create a PAT at: https://github.com/settings/tokens  (scope: repo)
 
@@ -527,7 +521,6 @@ DEFAULT_INSTALL_DIR="${DEFAULT_INSTALL_DIR:-/opt/treescout-docker}"
 # Network Settings
 DOMAIN_NAME="${DOMAIN_NAME:-}"
 DOCKER_SUBNET="${DOCKER_SUBNET:-}"
-CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
 
 # Database Settings
 DB_ROOT_PASS="${DB_ROOT_PASS:-}"
@@ -1960,16 +1953,10 @@ show_completion_message() {
     echo -e "    Pass:  ${GREEN}${REPORTER_PASS:-reporter123456789}${NC}"
 
     echo ""
-    echo -e "${CYAN}Cloudflare Tunnel (SSH + Web):${NC}"
-    echo -e "  The tunnel runs as a separate stack — independent of this app."
-    echo -e "  Start it with:"
-    echo -e "    ${YELLOW}cd $DEFAULT_INSTALL_DIR/src/deployment/docker/cloudflared${NC}"
-    echo -e "    ${YELLOW}echo CF_TUNNEL_TOKEN=\$CF_TUNNEL_TOKEN > .env${NC}"
-    echo -e "    ${YELLOW}docker compose up -d${NC}"
-    echo -e "  In Cloudflare Zero Trust, point the tunnel hostname to:"
-    echo -e "    ${YELLOW}Service Type: HTTP  (not HTTPS — tunnel handles TLS)${NC}"
-    echo -e "    ${YELLOW}URL:          http://localhost:8080${NC}"
-    echo -e "  See deployment/docker/cloudflared/README.md for full setup instructions."
+    echo -e "${CYAN}Cloudflare Tunnel:${NC}"
+    echo -e "  Managed externally — point your tunnel public hostname at:"
+    echo -e "    ${YELLOW}Service: HTTP   URL: localhost:8080${NC}"
+    echo -e "  (The tunnel handles TLS; the app serves plain HTTP on 8080.)"
     echo ""
     echo -e "${CYAN}Next Steps:${NC}"
     echo -e "  • To update: ${YELLOW}cd $DEFAULT_INSTALL_DIR && sudo ./update.sh${NC}"
@@ -2027,7 +2014,6 @@ check_only_report() {
     echo ""
 
     echo -e "${CYAN}Optional fields:${NC}"
-    check_kv "CF_TUNNEL_TOKEN"    "${CF_TUNNEL_TOKEN:+set (hidden)}"  false
     check_kv "GOOGLE_CLIENT_ID"   "${GOOGLE_CLIENT_ID:-}"             false
     check_kv "ACTION1_SYNC_ID"    "${ACTION1_SYNC_CLIENT_ID:-}"       false
     echo ""
@@ -2142,63 +2128,12 @@ main() {
     sudo docker compose up -d queue queue-billing cron
     log_success "Queue workers and cron scheduler started"
 
-    deploy_cloudflared
-
     log_info "Pruning unused Docker resources..."
     sudo docker image prune -f >/dev/null 2>&1 || true
 
     show_completion_message
 }
 
-
-deploy_cloudflared() {
-    if [ -n "${CF_TUNNEL_TOKEN:-}" ]; then
-        log_step "Checking Cloudflare Tunnel"
-
-        local existing_tunnels
-        existing_tunnels=$(sudo docker ps --format "{{.ID}}|{{.Names}}|{{.Image}}" | grep -i "cloudflared" || true)
-
-        local do_deploy_cf=true
-        if [ -n "$existing_tunnels" ]; then
-            log_warning "Existing cloudflared containers detected:"
-            echo "$existing_tunnels" | while IFS='|' read -r id name image; do
-                echo "  - $name ($id)"
-            done
-
-            if [ -t 0 ] || [ -c /dev/tty ]; then
-                echo ""
-                safe_read "Do you want to stop existing tunnel containers and redeploy the standalone utility? [y/N]: " redeploy_cf
-                if [[ "$redeploy_cf" =~ ^[Yy]$ ]]; then
-                    echo "$existing_tunnels" | while IFS='|' read -r id name image; do
-                        log_info "Stopping $name..."
-                        sudo docker stop "$id" >/dev/null || true
-                    done
-                else
-                    log_info "Skipping standalone cloudflared deployment."
-                    do_deploy_cf=false
-                fi
-            else
-                log_warning "Non-interactive mode: skipping standalone cloudflared deployment to avoid interrupting existing services."
-                do_deploy_cf=false
-            fi
-        fi
-
-        if [ "$do_deploy_cf" = true ]; then
-            log_info "Deploying standalone Cloudflare Tunnel..."
-            # SCRIPT_DIR is this script's directory (docker/); cloudflared is a sibling.
-            local cf_dir="${SCRIPT_DIR}/cloudflared"
-            if [ -d "$cf_dir" ]; then
-                cd "$cf_dir"
-                echo "CF_TUNNEL_TOKEN=\"${CF_TUNNEL_TOKEN}\"" > .env
-                sudo docker compose up -d
-                cd - >/dev/null
-                log_success "Cloudflare Tunnel deployed"
-            else
-                log_error "Cloudflared directory not found at $cf_dir"
-            fi
-        fi
-    fi
-}
 
 # Run main function
 main "$@"
