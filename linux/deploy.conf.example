@@ -1,132 +1,72 @@
 #===============================================================================
-# FreeScout Deployment Configuration (TEMPLATE)
-# Copy this file to 'deploy.conf' and customize for your environment.
+# Treescout Deployment Configuration
+# Copy this file to 'deploy.conf' and fill in your values.
+#
+# NEVER commit deploy.conf — it contains secrets. It is gitignored.
+# Run the deploy script with no config to have it generate this template.
 #===============================================================================
 
 #===============================================================================
-# INSTALLATION SETTINGS
+# CORE SETTINGS
 #===============================================================================
 
-# Git Repository to deploy from
 GIT_REPO_URL="https://github.com/BorealTek/Treescout-Core.git"
 GIT_BRANCH="main"
 
-# Installation path on the server
-DEFAULT_INSTALL_DIR="/opt/freescout-docker"
+# Where to install on the server (default is fine for most deployments)
+DEFAULT_INSTALL_DIR="/opt/treescout-docker"
 
-#===============================================================================
-# NETWORK SETTINGS
-#===============================================================================
+# Public domain name — sets APP_URL, nginx server_name, SSL cert CN
+DOMAIN_NAME="tickets.example.com"
 
-# Domain name for the application (e.g., tickets.yourcompany.com)
-DOMAIN_NAME="freescout.example.com"
-
-# Cloudflare Tunnel Token (Required for OrbStack/macOS deployments)
-CF_TUNNEL_TOKEN=""
-
-# SSH hostname exposed via the same Cloudflare tunnel (e.g. ssh.yourcompany.com)
-# Configure this as a public hostname in Zero Trust → Networks → Tunnels:
-#   Service: SSH   URL: host.docker.internal:22
-# Then protect it in Zero Trust → Access → Applications with your Google OAuth policy.
-CF_SSH_HOSTNAME="ssh.freescout.example.com"
-
-# Docker Network Subnet (Avoid conflicts with existing networks)
+# Docker bridge subnet — must not conflict with your LAN or existing Docker networks
 DOCKER_SUBNET="172.20.0.0/16"
 
 #===============================================================================
-# DATABASE SETTINGS
-#===============================================================================
-# It is recommended to change these for production!
-
-DB_ROOT_PASS="change_me_root_password"
-DB_USER="freescout"
-DB_PASS="change_me_user_password"
-DB_NAME="freescout"
-
-#===============================================================================
-# DEFAULT USERS (Created on fresh install)
+# DATABASE
 #===============================================================================
 
-# 1. Admin User (Full System Access)
+DB_ROOT_PASS=""   # Strong random password — used for MariaDB root access
+DB_USER="treescout"
+DB_PASS=""        # Strong random password — used by the Laravel app
+DB_NAME="treescout"
+
+#===============================================================================
+# ADMIN ACCOUNT (created on fresh install via freescout:install)
+#===============================================================================
+
 ADMIN_EMAIL="admin@example.com"
-ADMIN_PASS="change_me_admin_password"
+ADMIN_PASS=""
 ADMIN_FIRST_NAME="System"
 ADMIN_LAST_NAME="Administrator"
 
-# 2. Agent User (Standard Support Access)
-AGENT_EMAIL="agent@example.com"
-AGENT_PASS="change_me_agent_password"
-AGENT_FIRST_NAME="Support"
-AGENT_LAST_NAME="Agent"
-
-# 3. Finance User (Billing & Invoice Access)
-FINANCE_EMAIL="finance@example.com"
-FINANCE_PASS="change_me_finance_password"
-FINANCE_FIRST_NAME="Finance"
-FINANCE_LAST_NAME="Manager"
-
-# 4. Reporter User (Read-Only Access)
-REPORTER_EMAIL="reporter@example.com"
-REPORTER_PASS="change_me_reporter_password"
-REPORTER_FIRST_NAME="Report"
-REPORTER_LAST_NAME="Viewer"
-
 #===============================================================================
-# INTEGRATIONS (Optional)
+# CLOUDFLARE TUNNEL
 #===============================================================================
-
-# Google OAuth
-GOOGLE_CLIENT_ID=""
-GOOGLE_CLIENT_SECRET=""
-GOOGLE_ADMIN_EMAILS=""
-GOOGLE_ALLOWED_DOMAINS=""
-
-#===============================================================================
-# Action1 RMM API Keys (3 Roles — Least Privilege)
-#===============================================================================
-# Each role has a separate OAuth2 Client ID + Client Secret, scoped to only
-# the permissions that role needs. Create these in the Action1 dashboard.
+# The deploy script starts cloudflared automatically when CF_TUNNEL_TOKEN is set.
+# Get your token from: Cloudflare Zero Trust → Networks → Tunnels → your tunnel → Configure
 #
-# Sync  (Role A) — Read-only: View Endpoints, Software Inventory, Groups
-# Run   (Role B) — Executor:  Run pre-vetted scripts only, View Automation History
-# Manage(Role C) — Admin/Dev: Create/modify/delete scripts, Manage Software Repo
-#
-# Region: us | eu | ap (shared across all roles)
-ACTION1_REGION="us"
+# Tunnel public hostname config (in Cloudflare dashboard):
+#   tickets.example.com  →  HTTP  →  localhost:8080
+#   ssh.example.com      →  SSH   →  localhost:22
 
-ACTION1_SYNC_CLIENT_ID=""
-ACTION1_SYNC_CLIENT_SECRET=""
-
-ACTION1_RUN_CLIENT_ID=""
-ACTION1_RUN_CLIENT_SECRET=""
-
-ACTION1_MANAGE_CLIENT_ID=""
-ACTION1_MANAGE_CLIENT_SECRET=""
+CF_TUNNEL_TOKEN=""
 
 #===============================================================================
-# ADVANCED & MODULES
+# GITHUB TOKEN (required for private module repos)
 #===============================================================================
+# Create a PAT at: https://github.com/settings/tokens
+# Required scope: repo (full control of private repositories)
+# The core app repo is public and does not need this token.
 
-# GitHub Token — REQUIRED for all module repos (all BorealTek/* repos are PRIVATE)
-# The core app repo (BorealTek/Treescout-Core) is PUBLIC and does not need this.
-# Create a PAT at: https://github.com/settings/tokens  (scope: repo)
 export REPO_TOKEN=""
 
-# Modules to install for this deployment.
-# Format: "ModuleName|RepoURL|REPO_TOKEN|Branch"
-#
-# Edit this list to match the client profile you are deploying.
-# All available modules and named profiles are defined in:
-#   deployment/linux/modules.manifest.json
-#
-# Common profiles:
-#
-#   full (BorealTek internal) — all modules
-#   core-msp                 — helpdesk + CRM + billing + assets + portal
-#   helpdesk-only            — CRM + portal + knowledge base only
-#   google-workspace-msp     — core-msp + Google Workspace sync
-#
-# Example — full:
+#===============================================================================
+# MODULES TO INSTALL
+# Comment out any modules this deployment does not need.
+# Format: "ModuleName|RepoURL|TOKEN_VAR|Branch"
+#===============================================================================
+
 MODULES_TO_INSTALL=(
     "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
     "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
@@ -136,6 +76,7 @@ MODULES_TO_INSTALL=(
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
     "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
     "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
@@ -144,6 +85,85 @@ MODULES_TO_INSTALL=(
     "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
     "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
-    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
+
+#===============================================================================
+# OPTIONAL — ADDITIONAL USERS
+# Only created when AGENT_PASS (or AGENT_EMAIL) is set.
+#===============================================================================
+
+AGENT_EMAIL=""
+AGENT_PASS=""
+AGENT_FIRST_NAME="Support"
+AGENT_LAST_NAME="Agent"
+
+FINANCE_EMAIL=""
+FINANCE_PASS=""
+FINANCE_FIRST_NAME="Finance"
+FINANCE_LAST_NAME="Manager"
+
+REPORTER_EMAIL=""
+REPORTER_PASS=""
+REPORTER_FIRST_NAME="Report"
+REPORTER_LAST_NAME="Viewer"
+
+#===============================================================================
+# OPTIONAL — GOOGLE OAUTH
+# Required for SSO login and GoogleAdmin module (Workspace sync).
+#===============================================================================
+
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+# Comma-separated email addresses that get Google Admin API access
+GOOGLE_ADMIN_EMAILS=""
+# Comma-separated domains allowed to log in via Google SSO
+GOOGLE_ALLOWED_DOMAINS=""
+
+#===============================================================================
+# OPTIONAL — ACTION1 RMM
+# Three separate credentials: Sync (read-only), Run (executor), Manage (admin).
+#===============================================================================
+
+ACTION1_REGION="us"   # us | eu | ap
+
+ACTION1_SYNC_CLIENT_ID=""
+ACTION1_SYNC_CLIENT_SECRET=""
+
+ACTION1_AUTOMATION_RUNNER_CLIENT_ID=""
+ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET=""
+
+ACTION1_SCRIPT_MANAGER_CLIENT_ID=""
+ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
+
+#===============================================================================
+# OPTIONAL — MIDDLEMAN / KROKI DIAGRAMS
+#===============================================================================
+
+MIDDLEMAN_KROKI_ENABLED="false"
+MIDDLEMAN_KROKI_URL="http://host.docker.internal:8001"
+MIDDLEMAN_KROKI_TIMEOUT="10"
+
+#===============================================================================
+# OPTIONAL — MAILBOX AUTO-PROVISIONING
+# If set, creates a default mailbox on fresh install.
+#===============================================================================
+
+MAILBOX_EMAIL=""
+MAILBOX_NAME=""
+MAILBOX_IMAP_HOST=""
+MAILBOX_IMAP_PORT="993"
+MAILBOX_IMAP_USER=""
+MAILBOX_IMAP_PASS=""
+MAILBOX_SMTP_HOST=""
+MAILBOX_SMTP_PORT="587"
+MAILBOX_SMTP_USER=""
+MAILBOX_SMTP_PASS=""
+
+#===============================================================================
+# OPTIONAL — SAMPLE DATA
+#===============================================================================
+
+# Set to true to seed sample mailboxes, users, and conversations.
+# Only useful for demo/staging environments.
+SEED_SAMPLE_DATA=false

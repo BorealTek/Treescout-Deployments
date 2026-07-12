@@ -276,26 +276,230 @@ show_banner() {
 
 load_or_create_config() {
     if [ -f "$CONFIG_FILE" ]; then
-        # Fix ownership if needed
+        # Fix ownership if needed (running with sudo on behalf of a user)
         if [ -n "${SUDO_USER:-}" ] && [ "$(stat -c '%U' "$CONFIG_FILE" 2>/dev/null)" = "root" ]; then
             chown "$SUDO_USER:$(id -g "$SUDO_USER")" "$CONFIG_FILE"
         fi
 
         log_success "Configuration file found: $CONFIG_FILE"
-        # shellcheck disable=SC1090
-        source "$CONFIG_FILE"
-
-        # Sync config variables to internal variables
-        if [ -n "${GIT_REPO_URL:-}" ]; then DEFAULT_REPO="$GIT_REPO_URL"; fi
-        if [ -n "${GIT_BRANCH:-}" ]; then DEFAULT_BRANCH="$GIT_BRANCH"; fi
-
-        # Ensure array exists if not defined in config
-        if [ -z "${MODULES_TO_INSTALL+x}" ]; then
-            MODULES_TO_INSTALL=()
+        safe_read "Use this configuration? [Y/n] " use_config
+        if [[ "${use_config:-Y}" =~ ^[Yy]$ ]]; then
+            # shellcheck disable=SC1090
+            source "$CONFIG_FILE"
+            if [ -n "${GIT_REPO_URL:-}" ]; then DEFAULT_REPO="$GIT_REPO_URL"; fi
+            if [ -n "${GIT_BRANCH:-}" ]; then DEFAULT_BRANCH="$GIT_BRANCH"; fi
+            if [ -z "${MODULES_TO_INSTALL+x}" ]; then MODULES_TO_INSTALL=(); fi
+            INTERACTIVE=false
+            log_success "Configuration loaded — running in non-interactive mode"
         fi
     else
-        log_info "No configuration file found. Starting setup wizard..."
+        log_info "No configuration file found at: $CONFIG_FILE"
+        if [ -t 0 ] || [ -c /dev/tty ]; then
+            safe_read "Create a configuration template? [Y/n] " create_tmpl
+            if [[ "${create_tmpl:-Y}" =~ ^[Yy]$ ]]; then
+                create_config_template
+                log_success "Template created: $CONFIG_FILE"
+                echo ""
+                log_info "Next steps:"
+                echo -e "  1. Edit the config:  ${YELLOW}nano $CONFIG_FILE${NC}"
+                echo -e "  2. Fill in DOMAIN_NAME, DOCKER_SUBNET, DB passwords,"
+                echo -e "     ADMIN_EMAIL, ADMIN_PASS, and REPO_TOKEN at minimum."
+                echo -e "  3. Run this script again to deploy."
+                echo ""
+                exit 0
+            fi
+        fi
+        log_info "No config file — starting interactive setup wizard..."
     fi
+}
+
+create_config_template() {
+    local install_dir="${DEFAULT_INSTALL_DIR:-/opt/treescout-docker}"
+    local repo="${GIT_REPO_URL:-$DEFAULT_REPO}"
+    local branch="${GIT_BRANCH:-$DEFAULT_BRANCH}"
+
+    # Generate secure random passwords for the template
+    local db_root_pass db_pass admin_pass
+    db_root_pass=$(openssl rand -hex 16 2>/dev/null || echo "CHANGE_ME_root_$(date +%s)")
+    db_pass=$(openssl rand -hex 16 2>/dev/null || echo "CHANGE_ME_app_$(date +%s)")
+    admin_pass=$(openssl rand -hex 12 2>/dev/null || echo "CHANGE_ME_admin_$(date +%s)")
+
+    # Build MODULES_TO_INSTALL block from current array (or use default full set)
+    local modules_str=""
+    if [ "${#MODULES_TO_INSTALL[@]}" -gt 0 ]; then
+        for mod in "${MODULES_TO_INSTALL[@]}"; do
+            modules_str+="    \"$mod\""$'\n'
+        done
+    else
+        # Default full module set
+        modules_str='    "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
+    "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
+    "AppHealth|https://github.com/BorealTek/AppHealth-Module.git|REPO_TOKEN|main"
+    "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
+    "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
+    "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
+    "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
+    "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
+    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
+    "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
+    "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "MiddleMan|https://github.com/BorealTek/Treescout-MiddleMan.git|REPO_TOKEN|main"
+    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
+    "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
+    "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
+'
+    fi
+
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    cat > "$CONFIG_FILE" <<EOF
+#===============================================================================
+# Treescout Deployment Configuration
+# Generated: $(date)
+#
+# Fill in every required field, then run the deploy script again.
+# NEVER commit this file — it contains secrets. It is gitignored.
+#===============================================================================
+
+# ── CORE SETTINGS ─────────────────────────────────────────────────────────────
+
+GIT_REPO_URL="${repo}"
+GIT_BRANCH="${branch}"
+DEFAULT_INSTALL_DIR="${install_dir}"
+
+# Public domain name (sets APP_URL and SSL cert CN)
+DOMAIN_NAME=""
+
+# Docker bridge subnet — must not conflict with your LAN
+DOCKER_SUBNET="172.20.0.0/16"
+
+# ── DATABASE ──────────────────────────────────────────────────────────────────
+
+DB_ROOT_PASS="${db_root_pass}"
+DB_USER="treescout"
+DB_PASS="${db_pass}"
+DB_NAME="treescout"
+
+# ── ADMIN ACCOUNT ─────────────────────────────────────────────────────────────
+
+ADMIN_EMAIL=""
+ADMIN_PASS="${admin_pass}"
+ADMIN_FIRST_NAME="System"
+ADMIN_LAST_NAME="Administrator"
+
+# ── CLOUDFLARE TUNNEL ─────────────────────────────────────────────────────────
+# Cloudflare Zero Trust → Networks → Tunnels → your tunnel → Configure → Token
+# Tunnel public hostname: tickets.example.com → HTTP → localhost:8080
+
+CF_TUNNEL_TOKEN=""
+
+# ── GITHUB TOKEN (required for private module repos) ─────────────────────────
+# Create a PAT at: https://github.com/settings/tokens  (scope: repo)
+
+export REPO_TOKEN=""
+
+# ── MODULES TO INSTALL ────────────────────────────────────────────────────────
+# Comment out modules this deployment doesn't need.
+
+MODULES_TO_INSTALL=(
+${modules_str})
+
+# ── OPTIONAL: ADDITIONAL USERS ────────────────────────────────────────────────
+
+AGENT_EMAIL=""
+AGENT_PASS=""
+FINANCE_EMAIL=""
+FINANCE_PASS=""
+REPORTER_EMAIL=""
+REPORTER_PASS=""
+
+# ── OPTIONAL: GOOGLE OAUTH ────────────────────────────────────────────────────
+
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+GOOGLE_ADMIN_EMAILS=""
+GOOGLE_ALLOWED_DOMAINS=""
+
+# ── OPTIONAL: ACTION1 RMM ─────────────────────────────────────────────────────
+
+ACTION1_REGION="us"
+ACTION1_SYNC_CLIENT_ID=""
+ACTION1_SYNC_CLIENT_SECRET=""
+ACTION1_AUTOMATION_RUNNER_CLIENT_ID=""
+ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET=""
+ACTION1_SCRIPT_MANAGER_CLIENT_ID=""
+ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=""
+
+# ── OPTIONAL: KROKI DIAGRAMS ──────────────────────────────────────────────────
+
+MIDDLEMAN_KROKI_ENABLED="false"
+MIDDLEMAN_KROKI_URL="http://host.docker.internal:8001"
+MIDDLEMAN_KROKI_TIMEOUT="10"
+
+# ── OPTIONAL: MAILBOX AUTO-PROVISIONING ───────────────────────────────────────
+
+MAILBOX_EMAIL=""
+MAILBOX_NAME=""
+MAILBOX_IMAP_HOST=""
+MAILBOX_IMAP_PORT="993"
+MAILBOX_IMAP_USER=""
+MAILBOX_IMAP_PASS=""
+MAILBOX_SMTP_HOST=""
+MAILBOX_SMTP_PORT="587"
+MAILBOX_SMTP_USER=""
+MAILBOX_SMTP_PASS=""
+
+SEED_SAMPLE_DATA=false
+EOF
+
+    if [ -n "${SUDO_USER:-}" ]; then
+        chown "$SUDO_USER:$(id -g "$SUDO_USER")" "$CONFIG_FILE"
+    fi
+    chmod 600 "$CONFIG_FILE"
+}
+
+validate_config() {
+    log_step "Validating Configuration"
+
+    local errors=0
+
+    check_field() {
+        local label="$1"
+        local value="${2:-}"
+        if [ -z "$value" ]; then
+            log_error "Required field not set: $label"
+            ((errors++))
+        else
+            log_success "$label: set"
+        fi
+    }
+
+    check_field "DOMAIN_NAME"    "${DOMAIN_NAME:-}"
+    check_field "DOCKER_SUBNET"  "${DOCKER_SUBNET:-}"
+    check_field "DB_ROOT_PASS"   "${DB_ROOT_PASS:-}"
+    check_field "DB_PASS"        "${DB_PASS:-}"
+    check_field "ADMIN_EMAIL"    "${ADMIN_EMAIL:-}"
+    check_field "ADMIN_PASS"     "${ADMIN_PASS:-}"
+    check_field "REPO_TOKEN"     "${REPO_TOKEN:-}"
+
+    if [ $errors -gt 0 ]; then
+        echo ""
+        log_error "$errors required field(s) missing. Edit $CONFIG_FILE and try again."
+        exit 1
+    fi
+
+    # Validate REPO_TOKEN can reach GitHub
+    log_info "Testing REPO_TOKEN against GitHub API..."
+    if curl -sf -H "Authorization: token ${REPO_TOKEN}" \
+            "https://api.github.com/user" >/dev/null 2>&1; then
+        log_success "REPO_TOKEN: GitHub auth OK"
+    else
+        log_warning "REPO_TOKEN: GitHub auth failed (token may be invalid or network unavailable)"
+    fi
+
+    log_success "Configuration validation passed"
 }
 
 save_current_config() {
@@ -323,6 +527,7 @@ DEFAULT_INSTALL_DIR="${DEFAULT_INSTALL_DIR:-/opt/treescout-docker}"
 # Network Settings
 DOMAIN_NAME="${DOMAIN_NAME:-}"
 DOCKER_SUBNET="${DOCKER_SUBNET:-}"
+CF_TUNNEL_TOKEN="${CF_TUNNEL_TOKEN:-}"
 
 # Database Settings
 DB_ROOT_PASS="${DB_ROOT_PASS:-}"
@@ -432,8 +637,13 @@ interactive_menu() {
 }
 
 interactive_setup() {
-    # If script provided with args, skip menu
-    if [ "$INTERACTIVE" = true ] && [ -z "${1:-}" ]; then
+    # Config loaded from file — skip all prompts
+    if [ "$INTERACTIVE" = false ]; then
+        return
+    fi
+
+    # If no args, show the main menu first
+    if [ -z "${1:-}" ]; then
         interactive_menu
     fi
 
@@ -1774,23 +1984,118 @@ show_completion_message() {
 # MAIN EXECUTION
 #===============================================================================
 
-main() {
-    show_banner
-    if [ "$INTERACTIVE" = true ]; then
-        if [ -n "${1:-}" ]; then
-            # Arguments passed, skip menu
-            GIT_REPO_URL=$1
-            GIT_BRANCH=${2:-$DEFAULT_BRANCH}
-            log_info "Arguments detected, skipping interactive menu..."
+check_only_report() {
+    echo ""
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}  Treescout Pre-Deployment Check${NC}"
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    local ok="${GREEN}✔${NC}"
+    local warn="${YELLOW}⚠${NC}"
+    local fail="${RED}✖${NC}"
+    local errors=0
+
+    check_kv() {
+        local label="$1" value="${2:-}" required="${3:-true}"
+        if [ -n "$value" ]; then
+            printf "  ${ok} %-20s %s\n" "$label" "${value:0:60}"
+        elif [ "$required" = "true" ]; then
+            printf "  ${fail} %-20s %s\n" "$label" "(not set — required)"
+            ((errors++))
         else
-            interactive_menu
+            printf "  ${warn} %-20s %s\n" "$label" "(not set — optional)"
         fi
+    }
+
+    echo -e "${CYAN}Config file:${NC} $CONFIG_FILE"
+    if [ -f "$CONFIG_FILE" ]; then
+        echo -e "  ${ok} File exists"
+    else
+        echo -e "  ${fail} File not found"
+        ((errors++))
+    fi
+    echo ""
+
+    echo -e "${CYAN}Required fields:${NC}"
+    check_kv "DOMAIN_NAME"   "${DOMAIN_NAME:-}"
+    check_kv "DOCKER_SUBNET" "${DOCKER_SUBNET:-}"
+    check_kv "DB_ROOT_PASS"  "${DB_ROOT_PASS:+set (hidden)}"
+    check_kv "DB_PASS"       "${DB_PASS:+set (hidden)}"
+    check_kv "ADMIN_EMAIL"   "${ADMIN_EMAIL:-}"
+    check_kv "ADMIN_PASS"    "${ADMIN_PASS:+set (hidden)}"
+    check_kv "REPO_TOKEN"    "${REPO_TOKEN:+set (hidden)}"
+    echo ""
+
+    echo -e "${CYAN}Optional fields:${NC}"
+    check_kv "CF_TUNNEL_TOKEN"    "${CF_TUNNEL_TOKEN:+set (hidden)}"  false
+    check_kv "GOOGLE_CLIENT_ID"   "${GOOGLE_CLIENT_ID:-}"             false
+    check_kv "ACTION1_SYNC_ID"    "${ACTION1_SYNC_CLIENT_ID:-}"       false
+    echo ""
+
+    echo -e "${CYAN}Modules:${NC}"
+    if [ "${#MODULES_TO_INSTALL[@]}" -gt 0 ]; then
+        printf "  ${ok} %d modules configured\n" "${#MODULES_TO_INSTALL[@]}"
+        for mod in "${MODULES_TO_INSTALL[@]}"; do
+            printf "      %s\n" "$(echo "$mod" | cut -d'|' -f1)"
+        done
+    else
+        printf "  ${warn} No modules configured\n"
+    fi
+    echo ""
+
+    echo -e "${CYAN}Install target:${NC}"
+    printf "  %-20s %s\n" "Directory" "${DEFAULT_INSTALL_DIR:-/opt/treescout-docker}"
+    if [ -f "${DEFAULT_INSTALL_DIR:-/opt/treescout-docker}/.env" ]; then
+        printf "  ${warn} %-20s %s\n" "Mode" "UPGRADE (existing installation found)"
+    else
+        printf "  ${ok} %-20s %s\n" "Mode" "FRESH INSTALL"
+    fi
+    echo ""
+
+    if [ -n "${REPO_TOKEN:-}" ]; then
+        echo -e "${CYAN}GitHub API:${NC}"
+        local gh_user
+        gh_user=$(curl -sf -H "Authorization: token ${REPO_TOKEN}" \
+            "https://api.github.com/user" 2>/dev/null | grep '"login"' | cut -d'"' -f4 || true)
+        if [ -n "$gh_user" ]; then
+            printf "  ${ok} %-20s %s\n" "Auth" "OK (user: $gh_user)"
+        else
+            printf "  ${fail} %-20s %s\n" "Auth" "FAILED — token may be invalid or network unavailable"
+            ((errors++))
+        fi
+        echo ""
     fi
 
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    if [ $errors -gt 0 ]; then
+        echo -e "  ${fail} ${RED}Check failed — $errors issue(s) found.${NC}"
+        echo -e "  Edit ${YELLOW}$CONFIG_FILE${NC} and re-run: ${YELLOW}$0 --check${NC}"
+    else
+        echo -e "  ${ok} ${GREEN}All checks passed. Ready to deploy.${NC}"
+        echo -e "  Run without --check to start deployment."
+    fi
+    echo -e "${CYAN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    exit $errors
+}
+
+main() {
+    # ── Argument parsing ──────────────────────────────────────────────────────
+    local CHECK_ONLY=false
+    for arg in "$@"; do
+        case $arg in
+            --check) CHECK_ONLY=true ;;
+        esac
+    done
+
+    show_banner
+
+    # Config must be loaded early so --check can report on it
     preflight_checks
     load_or_create_config
 
-    # Set defaults for credentials
+    # Set defaults for credentials (only used if not in config)
     DB_ROOT_PASS="${DB_ROOT_PASS:-$(openssl rand -hex 16)}"
     DB_USER="${DB_USER:-treescout}"
     DB_PASS="${DB_PASS:-$(openssl rand -hex 16)}"
@@ -1798,17 +2103,16 @@ main() {
     ADMIN_EMAIL="${ADMIN_EMAIL:-admin@treescout.local}"
     ADMIN_PASS="${ADMIN_PASS:-$(openssl rand -hex 12)}"
 
-    check_existing_installation
-
-    if [ "$INTERACTIVE" = true ]; then
-        if [ -z "${1:-}" ]; then
-            interactive_setup
-        fi
+    # ── --check mode: validate and report, then exit ──────────────────────────
+    if [ "$CHECK_ONLY" = true ]; then
+        check_only_report
     fi
 
-    # Validate required variables
-    validate_required_var "DOMAIN_NAME" "${DOMAIN_NAME:-}"
-    validate_required_var "DOCKER_SUBNET" "${DOCKER_SUBNET:-}"
+    check_existing_installation
+    interactive_setup
+
+    # Validate required variables are set (guards against incomplete config)
+    validate_config
 
     # Execute deployment
     decommission_existing

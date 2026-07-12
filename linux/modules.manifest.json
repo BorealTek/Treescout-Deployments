@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for all module repositories and deployment profiles. Read by scripts/setup-modules.sh and deployment/docker/docker_deploy.sh.",
+  "_comment": "Single source of truth for all module repositories. Read by scripts/setup-modules.sh and deployment/docker/docker_deploy.sh.",
   "core": {
     "_comment": "The main application repo. PUBLIC — no token required.",
     "repo": "https://github.com/BorealTek/Treescout-Core.git",
@@ -7,51 +7,12 @@
     "private": false
   },
   "modules": {
-    "_comment": "All module repos are PRIVATE (github.com/BorealTek/*). REPO_TOKEN is required to clone or update them. Modules embedded directly in Treescout-Core (Reporting, TimeTracking, Prospects) are not listed here — they ship with the core clone.",
-    "Crm": {
-      "repo": "https://github.com/BorealTek/Crm-Module.git",
+    "_comment": "All module repos are PRIVATE (github.com/BorealTek/*). REPO_TOKEN (scope: repo) is required.",
+    "Action1": {
+      "repo": "https://github.com/BorealTek/Action1-Module.git",
       "branch": "main",
       "private": true,
-      "description": "Client & contact management, custom customer fields"
-    },
-    "AssetManagement": {
-      "repo": "https://github.com/BorealTek/AssetManagement-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Hardware and software asset inventory",
-      "requires": [
-        "Crm"
-      ]
-    },
-    "SoftwareSubscriptions": {
-      "repo": "https://github.com/BorealTek/SoftwareSubscriptions-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Per-seat software license tracking",
-      "requires": [
-        "Crm"
-      ]
-    },
-    "ClientPortal": {
-      "repo": "https://github.com/BorealTek/ClientPortal-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Customer-facing self-service portal with separate auth guard",
-      "requires": [
-        "Crm"
-      ]
-    },
-    "KnowledgeBase": {
-      "repo": "https://github.com/BorealTek/KnowledgeBase-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Internal and external documentation / knowledge base"
-    },
-    "GoogleAdmin": {
-      "repo": "https://github.com/BorealTek/GoogleAdmin-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Google Workspace user sync"
+      "description": "Action1 RMM integration — endpoint sync, remote script execution"
     },
     "Alerts": {
       "repo": "https://github.com/BorealTek/Alerts-Module.git",
@@ -59,72 +20,104 @@
       "private": true,
       "description": "Notification and alert subscription rules"
     },
-    "Action1": {
-      "repo": "https://github.com/BorealTek/Action1-Module.git",
+    "AppHealth": {
+      "repo": "https://github.com/BorealTek/AppHealth-Module.git",
       "branch": "main",
       "private": true,
-      "description": "Action1 RMM tool integration"
+      "description": "Application health monitoring and status dashboards"
+    },
+    "AssetManagement": {
+      "repo": "https://github.com/BorealTek/AssetManagement-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Hardware and software asset inventory",
+      "requires": ["Crm"]
+    },
+    "CaseManager": {
+      "repo": "https://github.com/BorealTek/CaseManager-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "AI-powered tier-0 case triage, research, and knowledge engine"
+    },
+    "ClientPortal": {
+      "repo": "https://github.com/BorealTek/ClientPortal-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Customer-facing self-service portal with separate auth guard",
+      "requires": ["Crm"]
+    },
+    "ContractManager": {
+      "repo": "https://github.com/BorealTek/ContractManager-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Client contract lifecycle management"
+    },
+    "Crm": {
+      "repo": "https://github.com/BorealTek/Crm-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Client and contact management, custom customer fields"
+    },
+    "DeploymentManager": {
+      "repo": "https://github.com/BorealTek/DeploymentManager-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Deployment tracking and release management"
+    },
+    "DevFeedback": {
+      "repo": "https://github.com/BorealTek/DevFeedback-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Internal developer feedback and issue tracking"
+    },
+    "EmailMigration": {
+      "repo": "https://github.com/BorealTek/EmailMigration-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Email account migration tooling (spawns sibling containers via DooD)"
+    },
+    "GoogleAdmin": {
+      "repo": "https://github.com/BorealTek/GoogleAdmin-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Google Workspace user sync and admin automation"
+    },
+    "KnowledgeBase": {
+      "repo": "https://github.com/BorealTek/KnowledgeBase-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Internal and external documentation / knowledge base"
+    },
+    "MiddleMan": {
+      "repo": "https://github.com/BorealTek/Treescout-MiddleMan.git",
+      "branch": "main",
+      "private": true,
+      "description": "Integration middleware and diagram rendering (Kroki bridge)"
+    },
+    "PIB": {
+      "repo": "https://github.com/BorealTek/PIB-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Pre-installation briefing and client onboarding checklists"
+    },
+    "Payment": {
+      "repo": "https://github.com/BorealTek/Payment-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Stripe payment processing and invoice collection"
+    },
+    "SoftwareSubscriptions": {
+      "repo": "https://github.com/BorealTek/SoftwareSubscriptions-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Per-seat software license tracking",
+      "requires": ["Crm"]
     },
     "WidgetRegistry": {
       "repo": "https://github.com/BorealTek/WidgetRegistry-Module.git",
       "branch": "main",
       "private": true,
       "description": "Composable widget slot system for UI composition"
-    },
-    "CaseManager": {
-      "repo": "https://github.com/BorealTek/CaseManager-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "AI-Powered Tier 0 Case Manager — triage, research, and knowledge engine"
-    }
-  },
-  "profiles": {
-    "full": {
-      "description": "All modules — BorealTek internal deployment",
-      "modules": [
-        "Crm",
-        "AssetManagement",
-        "SoftwareSubscriptions",
-        "ClientPortal",
-        "KnowledgeBase",
-        "GoogleAdmin",
-        "Alerts",
-        "Action1",
-        "WidgetRegistry",
-        "CaseManager"
-      ]
-    },
-    "core-msp": {
-      "description": "Standard MSP client — helpdesk + CRM + assets + portal",
-      "modules": [
-        "Crm",
-        "AssetManagement",
-        "SoftwareSubscriptions",
-        "ClientPortal",
-        "Alerts",
-        "WidgetRegistry"
-      ]
-    },
-    "helpdesk-only": {
-      "description": "Minimal install — ticketing and CRM only, no billing",
-      "modules": [
-        "Crm",
-        "KnowledgeBase",
-        "ClientPortal",
-        "WidgetRegistry"
-      ]
-    },
-    "google-workspace-msp": {
-      "description": "MSP with Google Workspace user management",
-      "modules": [
-        "Crm",
-        "AssetManagement",
-        "SoftwareSubscriptions",
-        "ClientPortal",
-        "GoogleAdmin",
-        "Alerts",
-        "WidgetRegistry"
-      ]
     }
   }
 }

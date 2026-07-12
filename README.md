@@ -37,14 +37,30 @@ The GHCR pre-built image (`Dockerfile.prod`) exists for CI validation and multi-
 
 ## Quick Start
 
+**First run (no config file yet):**
 ```bash
-# One-liner (interactive setup):
-sudo bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/docker/docker_deploy.sh)
-
-# Or with a pre-filled config:
-cp linux/deploy.conf.example linux/deploy.conf
-nano linux/deploy.conf   # set DOMAIN_NAME, REPO_TOKEN, DB creds, ADMIN_EMAIL
 sudo ./docker/docker_deploy.sh
+# → "Create a configuration template? [Y/n]"  → Y
+# → Script writes linux/deploy.conf and exits
+# → Edit the config, fill in required fields, run again to deploy
+```
+
+**Subsequent runs (config exists):**
+```bash
+sudo ./docker/docker_deploy.sh
+# → "Use this configuration? [Y/n]"  → Y
+# → Deploys non-interactively — no prompts
+```
+
+**Validate config without deploying:**
+```bash
+sudo ./docker/docker_deploy.sh --check
+# → Tests all required fields, GitHub token auth, prints deployment plan
+```
+
+**One-liner from remote (generates config template, then exits):**
+```bash
+sudo bash <(curl -sL https://raw.githubusercontent.com/BorealTek/Treescout-Deployments/master/docker/docker_deploy.sh)
 ```
 
 The script is idempotent — re-running prompts whether to keep or destroy the existing database.
@@ -107,11 +123,10 @@ The generated `update.sh` follows this sequence:
 
 ## Deployment Targets
 
-| Script | Platform | Architecture |
-|--------|----------|--------------|
-| `docker/docker_deploy.sh` | Ubuntu/Linux | Bind-mount, local build, **use this** |
-| `orbstack/orbstack_deploy.sh` | macOS/OrbStack | Bind-mount, local build |
-| `gcp/gcp_deploy.sh` | GCP | Legacy, not maintained |
+| Script | Platform | Notes |
+|--------|----------|-------|
+| `docker/docker_deploy.sh` | Ubuntu/Linux server | **Canonical — use this for all server deployments** |
+| `orbstack/orbstack_deploy.sh` | macOS/OrbStack | Local dev only |
 
 ---
 
@@ -129,9 +144,8 @@ The generated `update.sh` follows this sequence:
 
 ## Structure
 
-- `docker/` — Linux Docker deployer, cloudflared sidecar, kroki sidecar
-- `orbstack/` — macOS/OrbStack deployer
-- `gcp/` — Legacy GCP tooling
-- `linux/` — Shared config template (`deploy.conf.example`), module manifest
+- `docker/` — Linux server deployer (`docker_deploy.sh`), cloudflared sidecar, kroki sidecar
+- `orbstack/` — macOS/OrbStack local dev deployer
+- `linux/` — Shared config template (`deploy.conf.example`), module manifest (`modules.manifest.json`)
 
 > **Never commit `linux/deploy.conf`** — it contains REPO_TOKEN and DB passwords.
