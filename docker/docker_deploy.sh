@@ -1185,22 +1185,11 @@ EOF
 generate_docker_compose() {
     log_step "Generating Docker Compose Configuration"
 
-    local DOCKER_GID
-    if [ -S "/var/run/docker.sock" ]; then
-        DOCKER_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || echo "999")
-        log_info "Docker socket GID detected: $DOCKER_GID"
-    else
-        DOCKER_GID="999"
-        log_warning "Docker socket not found, using default GID: $DOCKER_GID"
-    fi
-
     cat > docker-compose.yml <<EOF
 services:
   app:
     build:
       context: .
-      args:
-        DOCKER_GID: ${DOCKER_GID}
     image: treescout-app
     restart: unless-stopped
     ports:
@@ -1209,7 +1198,6 @@ services:
     environment:
       - PUID=33
       - PGID=33
-      - DOCKER_GID=${DOCKER_GID}
       - HOST_SRC_PATH=${PWD}/src
       - PHP_MEMORY_LIMIT=512M
       - PHP_OPCACHE_ENABLE=1
@@ -1219,7 +1207,6 @@ services:
       - ./src:/var/www/html
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./nginx/ssl:/etc/nginx/ssl
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       db:
         condition: service_healthy

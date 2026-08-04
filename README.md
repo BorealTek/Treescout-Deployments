@@ -140,7 +140,7 @@ The generated `update.sh` follows this sequence:
 
 ## Structure
 
-- `docker/` — Linux server deployer (`docker_deploy.sh`), kroki sidecar
+- `docker/` — Linux server deployer (`docker_deploy.sh`)
 - `orbstack/` — macOS/OrbStack local dev deployer
 - `linux/` — Shared config template (`deploy.conf.example`), module manifest (`modules.manifest.json`)
 

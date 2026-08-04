@@ -67,19 +67,11 @@ MODULES_TO_INSTALL=(
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
     "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
-    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
-    "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
-    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
-    "MiddleMan|https://github.com/BorealTek/Treescout-MiddleMan.git|REPO_TOKEN|main"
-    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
-    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
-    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
-    "Prospects|https://github.com/BorealTek/Treescout-Prospects.git|REPO_TOKEN|main"
 )
 
 #===============================================================================
@@ -344,19 +336,11 @@ MODULES_TO_INSTALL=(
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
     "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
-    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
-    "DevFeedback|https://github.com/BorealTek/DevFeedback-Module.git|REPO_TOKEN|main"
-    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
-    "MiddleMan|https://github.com/BorealTek/Treescout-MiddleMan.git|REPO_TOKEN|main"
-    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
-    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
-    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
-    "Prospects|https://github.com/BorealTek/Treescout-Prospects.git|REPO_TOKEN|main"
 )
 EOF
 }
@@ -825,24 +809,11 @@ EOF
 generate_docker_compose() {
     log_step "Generating Docker Compose Configuration"
 
-    # Detect Docker socket GID for permission handling
-    # OrbStack typically uses same socket path as Docker Desktop
-    local DOCKER_GID="999"
-    if [ -S "/var/run/docker.sock" ]; then
-        # Try GNU stat (Linux) then BSD stat (macOS)
-        DOCKER_GID=$(stat -c '%g' /var/run/docker.sock 2>/dev/null || stat -f '%g' /var/run/docker.sock 2>/dev/null || echo "999")
-        log_info "Docker socket GID detected: $DOCKER_GID"
-    else
-        log_warning "Docker socket not found, using default GID: $DOCKER_GID"
-    fi
-
     cat > docker-compose.yml <<EOF
 services:
   app:
     build:
       context: .
-      args:
-        DOCKER_GID: ${DOCKER_GID}
     image: freescout-app
     restart: unless-stopped
     ports:
@@ -851,9 +822,6 @@ services:
     environment:
       - PUID=$(id -u)
       - PGID=$(id -g)
-      # Docker GID for socket access (enables sibling container spawning)
-      - DOCKER_GID=${DOCKER_GID}
-      # Host path for DooD volume mounting
       - HOST_SRC_PATH=${PWD}/src
       - PHP_MEMORY_LIMIT=512M
       - PHP_OPCACHE_ENABLE=1
@@ -870,11 +838,6 @@ services:
       - ./src:/var/www/html
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./nginx/ssl:/etc/nginx/ssl
-      # DOCKER-OUTSIDE-OF-DOCKER (Sibling Container Architecture)
-      # Mount Docker socket to allow app container to spawn sibling containers
-      # Used by EmailMigration module for spinning up temporary test mail servers
-      # OrbStack: Uses same socket path as standard Docker (/var/run/docker.sock)
-      - /var/run/docker.sock:/var/run/docker.sock
       # Named volumes: prevent storage/ and bootstrap/cache/ permission drift
       # between www-data (in-container) and your local user (host bind mount).
       - storage_data:/var/www/html/storage

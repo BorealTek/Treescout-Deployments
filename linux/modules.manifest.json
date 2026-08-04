@@ -46,35 +46,11 @@
       "description": "Customer-facing self-service portal with separate auth guard",
       "requires": ["Crm"]
     },
-    "ContractManager": {
-      "repo": "https://github.com/BorealTek/ContractManager-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Client contract lifecycle management"
-    },
     "Crm": {
       "repo": "https://github.com/BorealTek/Crm-Module.git",
       "branch": "main",
       "private": true,
       "description": "Client and contact management, custom customer fields"
-    },
-    "DeploymentManager": {
-      "repo": "https://github.com/BorealTek/DeploymentManager-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Deployment tracking and release management"
-    },
-    "DevFeedback": {
-      "repo": "https://github.com/BorealTek/DevFeedback-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Internal developer feedback and issue tracking"
-    },
-    "EmailMigration": {
-      "repo": "https://github.com/BorealTek/EmailMigration-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Email account migration tooling (spawns sibling containers via DooD)"
     },
     "GoogleAdmin": {
       "repo": "https://github.com/BorealTek/GoogleAdmin-Module.git",
@@ -87,24 +63,6 @@
       "branch": "main",
       "private": true,
       "description": "Internal and external documentation / knowledge base"
-    },
-    "MiddleMan": {
-      "repo": "https://github.com/BorealTek/Treescout-MiddleMan.git",
-      "branch": "main",
-      "private": true,
-      "description": "Integration middleware and diagram rendering (Kroki bridge)"
-    },
-    "PIB": {
-      "repo": "https://github.com/BorealTek/PIB-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Pre-installation briefing and client onboarding checklists"
-    },
-    "Payment": {
-      "repo": "https://github.com/BorealTek/Payment-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Stripe payment processing and invoice collection"
     },
     "SoftwareSubscriptions": {
       "repo": "https://github.com/BorealTek/SoftwareSubscriptions-Module.git",
