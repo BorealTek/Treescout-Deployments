@@ -1269,24 +1269,6 @@ services:
     healthcheck:
       disable: true
 
-  queue-billing:
-    image: treescout-app
-    restart: always
-    command: php artisan queue:work --queue=billing --sleep=3 --tries=3 --max-time=3600
-    environment:
-      - PHP_MEMORY_LIMIT=512M
-      - PHP_OPCACHE_ENABLE=1
-    volumes:
-      - ./src:/var/www/html
-    depends_on:
-      - app
-      - db
-      - redis
-    networks:
-      - fs-net
-    healthcheck:
-      disable: true
-
   cron:
     image: treescout-app
     restart: unless-stopped
@@ -1394,7 +1376,7 @@ log_step "Rebuilding application image..."
 sudo docker compose build app
 
 log_step "Restarting app and worker containers (DB/Redis stay up)..."
-sudo docker compose up -d --no-deps app queue queue-billing cron reverb
+sudo docker compose up -d --no-deps app queue cron reverb
 
 sudo docker compose exec -T app php artisan down --retry=60 2>/dev/null || true
 
@@ -2104,7 +2086,7 @@ main() {
     # Queue workers and cron are safe to start now — all migrations have run,
     # config cache is warm, and the jobs/failed_jobs tables exist.
     log_step "Starting Queue Workers & Cron"
-    sudo docker compose up -d queue queue-billing cron
+    sudo docker compose up -d queue cron
     log_success "Queue workers and cron scheduler started"
 
     log_info "Pruning unused Docker resources..."

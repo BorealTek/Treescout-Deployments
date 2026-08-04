@@ -122,7 +122,7 @@ The generated `update.sh` follows this sequence:
 | Script | Platform | Notes |
 |--------|----------|-------|
 | `docker/docker_deploy.sh` | Ubuntu/Linux server | **Canonical — use this for all server deployments** |
-| `orbstack/orbstack_deploy.sh` | macOS/OrbStack | Local dev only |
+| `colima/colima_deploy.sh` | macOS/Linux + Colima | Local dev only |
 
 ---
 
@@ -141,7 +141,7 @@ The generated `update.sh` follows this sequence:
 ## Structure
 
 - `docker/` — Linux server deployer (`docker_deploy.sh`)
-- `orbstack/` — macOS/OrbStack local dev deployer
+- `colima/` — macOS/Linux local dev deployer using Colima (`colima_deploy.sh`)
 - `linux/` — Shared config template (`deploy.conf.example`), module manifest (`modules.manifest.json`)
 
 > **Never commit `linux/deploy.conf`** — it contains REPO_TOKEN and DB passwords.
