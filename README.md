@@ -122,7 +122,7 @@ The generated `update.sh` follows this sequence:
 | Script | Platform | Notes |
 |--------|----------|-------|
 | `docker/docker_deploy.sh` | Ubuntu/Linux server | **Canonical — use this for all server deployments** |
-| `colima/colima_deploy.sh` | macOS/Linux + Colima | Local dev only |
+| `colima/colima_deploy.sh` | macOS/Linux + Colima | Local dev, or a dedicated macOS sandbox/multi-purpose server |
 
 ---
 
@@ -141,7 +141,7 @@ The generated `update.sh` follows this sequence:
 ## Structure
 
 - `docker/` — Linux server deployer (`docker_deploy.sh`)
-- `colima/` — macOS/Linux local dev deployer using Colima (`colima_deploy.sh`)
+- `colima/` — macOS/Linux deployer using Colima (`colima_deploy.sh`) — local dev or a standalone sandbox server
 - `linux/` — Shared config template (`deploy.conf.example`), module manifest (`modules.manifest.json`)
 
 > **Never commit `linux/deploy.conf`** — it contains REPO_TOKEN and DB passwords.
