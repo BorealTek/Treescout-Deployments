@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for all module repositories. Read by scripts/setup-modules.sh and deployment/docker/docker_deploy.sh.",
+  "_comment": "Single source of truth for all module repositories. Read by scripts/setup-modules.sh and deployment/docker/docker_deploy.sh. Do not add '_comment' keys inside 'modules' or 'profiles' below — both objects are enumerated with 'keys[]'/'to_entries[]' and a stray '_comment' key gets treated as a real entry.",
   "core": {
     "_comment": "The main application repo. PUBLIC — no token required.",
     "repo": "https://github.com/BorealTek/Treescout-Core.git",
@@ -7,7 +7,6 @@
     "private": false
   },
   "modules": {
-    "_comment": "All module repos are PRIVATE (github.com/BorealTek/*). REPO_TOKEN (scope: repo) is required.",
     "Action1": {
       "repo": "https://github.com/BorealTek/Action1-Module.git",
       "branch": "main",
@@ -19,12 +18,6 @@
       "branch": "main",
       "private": true,
       "description": "Notification and alert subscription rules"
-    },
-    "AppHealth": {
-      "repo": "https://github.com/BorealTek/AppHealth-Module.git",
-      "branch": "main",
-      "private": true,
-      "description": "Application health monitoring and status dashboards"
     },
     "AssetManagement": {
       "repo": "https://github.com/BorealTek/AssetManagement-Module.git",
@@ -76,6 +69,23 @@
       "branch": "main",
       "private": true,
       "description": "Composable widget slot system for UI composition"
+    }
+  },
+  "profiles": {
+    "full": {
+      "description": "All separately-repo'd modules",
+      "modules": [
+        "Action1",
+        "Alerts",
+        "AssetManagement",
+        "CaseManager",
+        "ClientPortal",
+        "Crm",
+        "GoogleAdmin",
+        "KnowledgeBase",
+        "SoftwareSubscriptions",
+        "WidgetRegistry"
+      ]
     }
   }
 }
