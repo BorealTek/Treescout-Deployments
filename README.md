@@ -94,7 +94,24 @@ export REPO_TOKEN="ghp_..."           # GitHub PAT (repo scope) for private modu
 # Optional integrations
 GOOGLE_CLIENT_ID=""
 ACTION1_SYNC_CLIENT_ID=""
+MAIL_HOST=""
+IMAP_HOST=""
 ```
+
+Full catalog of every field (deploy.conf-managed or not): [`linux/ENV_REFERENCE.md`](linux/ENV_REFERENCE.md).
+
+---
+
+## Secrets Separation (`.env` vs `.env.secrets`)
+
+`configure_laravel()` in both `docker_deploy.sh` and `colima_deploy.sh` writes two files into `src/`, not one:
+
+- **`.env`** — structural config: hostnames, usernames, IDs, feature flags. Bind-mounted into the container, read by Laravel's normal dotenv boot.
+- **`.env.secrets`** — passwords and API secrets only (`DB_PASSWORD`, `ADMIN_PASSWORD`, `REVERB_APP_SECRET`, `GOOGLE_CLIENT_SECRET`, `ACTION1_*_CLIENT_SECRET`, `MAIL_PASSWORD`, `IMAP_PASSWORD`). Chmod 600, gitignored, never baked into the image. Injected into every service (`app`, `queue`, `cron`, `reverb`) via Docker Compose's `env_file:`, which sets real container OS environment variables — phpdotenv never overwrites an already-set env var, so these values silently win over anything with the same key in `.env` with zero extra code on the Laravel side.
+
+This mirrors what `linux/setup-server.sh` (the GHCR pre-built-image path) already did — `docker_deploy.sh`/`colima_deploy.sh` just didn't have it until now. `REVERB_APP_KEY` (not the secret) deliberately stays in `.env`: it also feeds `VITE_REVERB_APP_KEY`, which Vite bakes into the frontend bundle at `npm run build` time, so it needs to be on disk when the build runs, not just injected as a runtime container env var.
+
+`docker_deploy.sh`'s separate `secrets.env` (deploy-time, outside git, at `$DEFAULT_INSTALL_DIR/secrets.env`) is a different, complementary mechanism — it's what makes DB/Reverb credentials stable across re-deploys (`sudo ./docker_deploy.sh --secrets` to view). `configure_laravel()` reads those stable values and is what actually writes them into `.env.secrets` for the running containers to consume.
 
 ---
 
@@ -132,9 +149,10 @@ The generated `update.sh` follows this sequence:
 |-------|-----|
 | `freescout:install` not found | Platform uses `freescout:*` namespace, not `treescout:*` |
 | queue/cron/reverb show unhealthy | serversideup/php bakes in nginx healthcheck; these containers run PHP CLI — `healthcheck: disable: true` is required |
-| APP_KEY empty after deploy | Only matters with `env_file` approach (GHCR image). bind-mount has real `.env` — `key:generate` writes to disk normally |
+| APP_KEY empty after deploy | `APP_KEY` lives in bind-mounted `.env` (not `.env.secrets`) — `key:generate` writes to disk normally on both deploy paths |
 | Cloudflare HTTPS detection broken | `TRUSTED_PROXIES=*` required in `.env` — the tunnel sends X-Forwarded-Proto: https |
 | FreeScout crashes on boot | `modules_statuses.json` lists modules that aren't cloned — script generates this file from what's actually on disk |
+| Google SSO allowlist has no effect | Historically `GOOGLE_ADMIN_EMAILS`/`GOOGLE_ALLOWED_DOMAINS` got appended to `.env` without stripping `.env.example`'s blank placeholder first — phpdotenv keeps the *first* definition it sees, so the real value was silently shadowed. Fixed in `configure_laravel()` (strips before appending); if you hit this on an older install, check `.env` for duplicate `GOOGLE_ADMIN_EMAILS=`/`GOOGLE_ALLOWED_DOMAINS=` lines and keep only the non-blank one |
 
 ---
 
@@ -142,6 +160,8 @@ The generated `update.sh` follows this sequence:
 
 - `docker/` — Linux server deployer (`docker_deploy.sh`)
 - `colima/` — macOS/Linux deployer using Colima (`colima_deploy.sh`) — local dev or a standalone sandbox server
-- `linux/` — Shared config template (`deploy.conf.example`), module manifest (`modules.manifest.json`)
+- `linux/` — Shared config template (`deploy.conf.example`), module manifest (`modules.manifest.json`), full env var catalog (`ENV_REFERENCE.md`)
 
 > **Never commit `linux/deploy.conf`** — it contains REPO_TOKEN and DB passwords.
+
+See [`linux/ENV_REFERENCE.md`](linux/ENV_REFERENCE.md) for what every `.env`/`.env.secrets` key actually does, which file it belongs in, and which keys are dead/deprecated.
