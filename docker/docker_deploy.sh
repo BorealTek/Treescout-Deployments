@@ -267,6 +267,50 @@ show_banner() {
 }
 
 
+preview_config_values() {
+    # Presence-only preview (never prints actual values — this may include secrets
+    # like DB_PASS/REPO_TOKEN). Sourced once in a subshell so nothing leaks into the
+    # caller's environment before the operator has actually confirmed the file.
+    local keys=(
+        ACTION1_AUTOMATION_RUNNER_CLIENT_ID ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET
+        ACTION1_REGION ACTION1_SCRIPT_MANAGER_CLIENT_ID ACTION1_SCRIPT_MANAGER_CLIENT_SECRET
+        ACTION1_SYNC_CLIENT_ID ACTION1_SYNC_CLIENT_SECRET
+        ADMIN_EMAIL ADMIN_FIRST_NAME ADMIN_LAST_NAME ADMIN_PASS
+        DEFAULT_INSTALL_DIR DOCKER_SUBNET DOMAIN_NAME
+        DB_NAME DB_USER
+        GIT_BRANCH GIT_REPO_URL
+        GOOGLE_ALLOWED_DOMAINS GOOGLE_ADMIN_EMAILS GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET
+        IMAP_ENCRYPTION IMAP_HOST IMAP_PASSWORD IMAP_PORT IMAP_USERNAME
+        KB_URL MAIL_FROM_ADDRESS MAIL_FROM_NAME MAIL_HOST MAIL_PASSWORD MAIL_PORT MAIL_SCHEME MAIL_USERNAME
+        REPO_TOKEN SEED_SAMPLE_DATA TICKET_URL
+    )
+    local populated=() unpopulated=() key val dump
+
+    dump=$(
+        # shellcheck disable=SC1090
+        source "$CONFIG_FILE" 2>/dev/null
+        for k in "${keys[@]}"; do
+            printf '%s=%s\n' "$k" "${!k:-}"
+        done
+    )
+
+    while IFS='=' read -r key val; do
+        if [ -n "$val" ]; then populated+=("$key"); else unpopulated+=("$key"); fi
+    done <<< "$dump"
+
+    echo ""
+    echo -e "${CYAN}Configuration preview (values hidden):${NC}"
+    if [ ${#populated[@]} -gt 0 ]; then
+        echo -e "  ${GREEN}Populated:${NC}"
+        printf '    %s\n' "${populated[@]}" | sort
+    fi
+    if [ ${#unpopulated[@]} -gt 0 ]; then
+        echo -e "  ${YELLOW}Not set:${NC}"
+        printf '    %s\n' "${unpopulated[@]}" | sort
+    fi
+    echo ""
+}
+
 load_or_create_config() {
     if [ -f "$CONFIG_FILE" ]; then
         # Fix ownership if needed (running with sudo on behalf of a user)
@@ -275,6 +319,7 @@ load_or_create_config() {
         fi
 
         log_success "Configuration file found: $CONFIG_FILE"
+        preview_config_values
         safe_read "Use this configuration? [Y/n] " use_config
         if [[ "${use_config:-Y}" =~ ^[Yy]$ ]]; then
             # shellcheck disable=SC1090
@@ -356,6 +401,12 @@ DEFAULT_INSTALL_DIR="${install_dir}"
 # Public domain name (sets APP_URL and SSL cert CN)
 DOMAIN_NAME=""
 
+# Ticketing / Knowledge Base URL split (optional — both fall back to APP_URL /
+# APP_URL+'/kb' when unset; only set these if you want a dedicated KB hostname,
+# see app/Http/Middleware/SetContextUrl.php)
+TICKET_URL=""
+KB_URL=""
+
 # Docker bridge subnet — must not conflict with your LAN
 DOCKER_SUBNET="172.20.0.0/16"
 
@@ -390,7 +441,27 @@ ${modules_str})
 
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
+GOOGLE_ADMIN_EMAILS=""
 GOOGLE_ALLOWED_DOMAINS=""
+
+# ── OPTIONAL: MAIL (falls back to the \`log\` driver if left blank) ───────────
+
+MAIL_HOST=""
+MAIL_PORT="587"
+MAIL_USERNAME=""
+MAIL_PASSWORD=""
+MAIL_SCHEME="tls"
+MAIL_FROM_ADDRESS=""
+MAIL_FROM_NAME=""
+
+# ── OPTIONAL: IMAP (global default mailbox-fetch account) ────────────────────
+# Most mailboxes are configured per-mailbox via the Settings UI instead.
+
+IMAP_HOST=""
+IMAP_PORT="993"
+IMAP_USERNAME=""
+IMAP_PASSWORD=""
+IMAP_ENCRYPTION="ssl"
 
 # ── OPTIONAL: ACTION1 RMM ─────────────────────────────────────────────────────
 
@@ -1195,6 +1266,8 @@ services:
     ports:
       - "0.0.0.0:8080:8080"  # HTTP — Cloudflare tunnel origin (tunnel handles TLS)
       - "127.0.0.1:8443:8443"  # HTTPS — emergency LAN access only
+    env_file:
+      - ./src/.env.secrets
     environment:
       - PUID=33
       - PGID=33
@@ -1255,6 +1328,8 @@ services:
     image: treescout-app
     restart: always
     command: php artisan queue:work --queue=emails,default,long-running --sleep=3 --tries=3 --max-time=3600
+    env_file:
+      - ./src/.env.secrets
     environment:
       - PHP_MEMORY_LIMIT=512M
       - PHP_OPCACHE_ENABLE=1
@@ -1278,6 +1353,8 @@ services:
       echo "Starting cron..." &&
       cron -f
       '
+    env_file:
+      - ./src/.env.secrets
     volumes:
       - ./src:/var/www/html
     depends_on:
@@ -1301,6 +1378,8 @@ services:
       echo "Dependencies ready, starting Reverb...";
       php artisan reverb:start --host="0.0.0.0" --port=8080
       '
+    env_file:
+      - ./src/.env.secrets
     environment:
       - PHP_OPCACHE_ENABLE=1
     volumes:
@@ -1481,6 +1560,17 @@ configure_laravel() {
     cp "$DEFAULT_INSTALL_DIR/src/.env.example" "$DEFAULT_INSTALL_DIR/src/.env"
 
     local env_file="$DEFAULT_INSTALL_DIR/src/.env"
+    local secrets_file="$DEFAULT_INSTALL_DIR/src/.env.secrets"
+
+    # .env.secrets: sensitive values only (passwords/API secrets — never hostnames,
+    # usernames, IDs, or feature flags). Injected into containers via docker-compose
+    # env_file:, which sets real OS env vars — phpdotenv never overwrites an
+    # already-set env var, so these values win over anything in .env automatically.
+    # Never baked into the image, chmod 600, gitignored. Complementary to
+    # secrets.env (above) — that generates/persists the stable values; this is
+    # where they land for the running app to actually consume.
+    : > "$secrets_file"
+    chmod 600 "$secrets_file"
 
     # Database configuration
     sed -i "s/APP_NAME=Laravel/APP_NAME=\"BorealTek Treescout\"/g" "$env_file"
@@ -1489,7 +1579,8 @@ configure_laravel() {
     sed -i "s/# DB_PORT=3306/DB_PORT=3306/g" "$env_file"
     sed -i "s/# DB_DATABASE=laravel/DB_DATABASE=$DB_NAME/g" "$env_file"
     sed -i "s/# DB_USERNAME=root/DB_USERNAME=$DB_USER/g" "$env_file"
-    sed -i "s/# DB_PASSWORD=/DB_PASSWORD=$DB_PASS/g" "$env_file"
+    # DB_PASSWORD is a secret — .env.example's commented placeholder line is left
+    # as-is, real value goes to .env.secrets below.
 
     # App URL and caching
     sed -i "s|APP_URL=http://localhost|APP_URL=https://$DOMAIN_NAME|g" "$env_file"
@@ -1497,25 +1588,74 @@ configure_laravel() {
     sed -i "s/SESSION_DRIVER=database/SESSION_DRIVER=redis/g" "$env_file"
     sed -i "s/REDIS_HOST=127.0.0.1/REDIS_HOST=redis/g" "$env_file"
 
-    # Admin credentials
+    cat >> "$secrets_file" <<EOF
+DB_PASSWORD=$DB_PASS
+EOF
+
+    # Admin credentials — email/name aren't sensitive, password is
     cat >> "$env_file" <<EOF
 
 # Admin Credentials
 ADMIN_EMAIL=${ADMIN_EMAIL}
-ADMIN_PASSWORD="${ADMIN_PASS}"
 ADMIN_FIRST_NAME="${ADMIN_FIRST_NAME:-System}"
 ADMIN_LAST_NAME="${ADMIN_LAST_NAME:-Administrator}"
 
 EOF
+    cat >> "$secrets_file" <<EOF
+ADMIN_PASSWORD=${ADMIN_PASS}
+EOF
 
-    # Reverb/Broadcasting — keys come from secrets.env (stable across re-deploys)
+    # TICKET_URL / KB_URL — both optional (config/app.php falls back to APP_URL /
+    # APP_URL+'/kb' when unset), only written when the operator explicitly wants a
+    # dedicated ticketing/KB hostname split (see SetContextUrl middleware).
+    if [ -n "${TICKET_URL:-}" ] || [ -n "${KB_URL:-}" ]; then
+        cat >> "$env_file" <<EOF
+
+# Ticketing / Knowledge Base URL split (see app/Http/Middleware/SetContextUrl.php)
+EOF
+        [ -n "${TICKET_URL:-}" ] && echo "TICKET_URL=${TICKET_URL}" >> "$env_file"
+        [ -n "${KB_URL:-}" ] && echo "KB_URL=${KB_URL}" >> "$env_file"
+    fi
+
+    # Mail (optional — falls back to the `log` driver via .env.example defaults)
+    if [ -n "${MAIL_HOST:-}" ]; then
+        cat >> "$env_file" <<EOF
+
+# Mail
+MAIL_MAILER=smtp
+MAIL_HOST=${MAIL_HOST}
+MAIL_PORT=${MAIL_PORT:-587}
+MAIL_USERNAME=${MAIL_USERNAME:-}
+MAIL_SCHEME=${MAIL_SCHEME:-tls}
+MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS:-$ADMIN_EMAIL}
+MAIL_FROM_NAME="${MAIL_FROM_NAME:-$DOMAIN_NAME}"
+EOF
+        [ -n "${MAIL_PASSWORD:-}" ] && echo "MAIL_PASSWORD=${MAIL_PASSWORD}" >> "$secrets_file"
+    fi
+
+    # IMAP (optional — only needed if mailboxes fetch via a global default account)
+    if [ -n "${IMAP_HOST:-}" ]; then
+        cat >> "$env_file" <<EOF
+
+# IMAP
+IMAP_HOST=${IMAP_HOST}
+IMAP_PORT=${IMAP_PORT:-993}
+IMAP_USERNAME=${IMAP_USERNAME:-}
+IMAP_ENCRYPTION=${IMAP_ENCRYPTION:-ssl}
+EOF
+        [ -n "${IMAP_PASSWORD:-}" ] && echo "IMAP_PASSWORD=${IMAP_PASSWORD}" >> "$secrets_file"
+    fi
+
+    # Reverb/Broadcasting — keys come from secrets.env (stable across re-deploys).
+    # REVERB_APP_KEY (not the secret) also feeds VITE_REVERB_APP_KEY, which Vite
+    # bakes into the frontend bundle at build time — it must stay in .env, not
+    # .env.secrets, or `npm run build` won't see it.
     cat >> "$env_file" <<EOF
 
 # Broadcasting (Reverb)
 BROADCAST_CONNECTION=reverb
 REVERB_APP_ID=${REVERB_APP_ID}
 REVERB_APP_KEY=${REVERB_APP_KEY}
-REVERB_APP_SECRET=${REVERB_APP_SECRET}
 REVERB_HOST="reverb"
 REVERB_PORT=8080
 REVERB_SCHEME=http
@@ -1525,16 +1665,28 @@ VITE_REVERB_HOST="${DOMAIN_NAME}"
 VITE_REVERB_PORT=443
 VITE_REVERB_SCHEME=https
 EOF
+    cat >> "$secrets_file" <<EOF
+REVERB_APP_SECRET=${REVERB_APP_SECRET}
+EOF
 
-    # Google OAuth (if configured)
+    # Google OAuth (if configured) — strip any pre-existing GOOGLE_ADMIN_EMAILS/
+    # GOOGLE_ALLOWED_DOMAINS lines first (.env.example already declares blank
+    # placeholders for both; phpdotenv keeps the FIRST definition of a key it sees,
+    # so appending without stripping left the real values silently shadowed by the
+    # empty placeholder — Google SSO's domain/email allowlist never actually applied).
     if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
+        grep -vE '^(GOOGLE_ADMIN_EMAILS=|GOOGLE_ALLOWED_DOMAINS=)' "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
+
         cat >> "$env_file" <<EOF
 
 # Google OAuth
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
 GOOGLE_REDIRECT_URI=https://${DOMAIN_NAME}/auth/google/callback
+GOOGLE_ADMIN_EMAILS="${GOOGLE_ADMIN_EMAILS:-}"
 GOOGLE_ALLOWED_DOMAINS="${GOOGLE_ALLOWED_DOMAINS:-}"
+EOF
+        cat >> "$secrets_file" <<EOF
+GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
 EOF
     fi
 
@@ -1543,22 +1695,24 @@ EOF
     # causing session cookie samesite failures and mixed-content issues.
     grep -q "^TRUSTED_PROXIES=" "$env_file" || echo "TRUSTED_PROXIES=*" >> "$env_file"
 
-    # Action1 RMM (if configured)
+    # Action1 RMM (if configured) — client IDs aren't sensitive, secrets are
     if [ -n "${ACTION1_SYNC_CLIENT_ID:-}" ] || [ -n "${ACTION1_AUTOMATION_RUNNER_CLIENT_ID:-}" ] || [ -n "${ACTION1_SCRIPT_MANAGER_CLIENT_ID:-}" ]; then
         cat >> "$env_file" <<EOF
 
 # Action1 RMM
 ACTION1_REGION=${ACTION1_REGION:-us}
 ACTION1_SYNC_CLIENT_ID="${ACTION1_SYNC_CLIENT_ID:-}"
-ACTION1_SYNC_CLIENT_SECRET="${ACTION1_SYNC_CLIENT_SECRET:-}"
 ACTION1_AUTOMATION_RUNNER_CLIENT_ID="${ACTION1_AUTOMATION_RUNNER_CLIENT_ID:-}"
-ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET="${ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET:-}"
 ACTION1_SCRIPT_MANAGER_CLIENT_ID="${ACTION1_SCRIPT_MANAGER_CLIENT_ID:-}"
-ACTION1_SCRIPT_MANAGER_CLIENT_SECRET="${ACTION1_SCRIPT_MANAGER_CLIENT_SECRET:-}"
+EOF
+        cat >> "$secrets_file" <<EOF
+ACTION1_SYNC_CLIENT_SECRET=${ACTION1_SYNC_CLIENT_SECRET:-}
+ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET=${ACTION1_AUTOMATION_RUNNER_CLIENT_SECRET:-}
+ACTION1_SCRIPT_MANAGER_CLIENT_SECRET=${ACTION1_SCRIPT_MANAGER_CLIENT_SECRET:-}
 EOF
     fi
 
-    log_success "Laravel environment configured"
+    log_success "Laravel environment configured (.env.secrets separated, chmod 600)"
 }
 
 setup_storage_permissions() {
@@ -1968,6 +2122,10 @@ check_only_report() {
     echo ""
 
     echo -e "${CYAN}Optional fields:${NC}"
+    check_kv "TICKET_URL"         "${TICKET_URL:-}"                  false
+    check_kv "KB_URL"             "${KB_URL:-}"                      false
+    check_kv "MAIL_HOST"          "${MAIL_HOST:-}"                   false
+    check_kv "IMAP_HOST"          "${IMAP_HOST:-}"                   false
     check_kv "GOOGLE_CLIENT_ID"   "${GOOGLE_CLIENT_ID:-}"             false
     check_kv "ACTION1_SYNC_ID"    "${ACTION1_SYNC_CLIENT_ID:-}"       false
     echo ""

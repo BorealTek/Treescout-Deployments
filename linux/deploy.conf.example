@@ -19,6 +19,12 @@ DEFAULT_INSTALL_DIR="/opt/treescout-docker"
 # Public domain name — sets APP_URL, nginx server_name, SSL cert CN
 DOMAIN_NAME="tickets.example.com"
 
+# Ticketing / Knowledge Base URL split (optional — both fall back to APP_URL /
+# APP_URL+'/kb' when unset; only set these if you want a dedicated KB hostname,
+# see app/Http/Middleware/SetContextUrl.php)
+TICKET_URL=""
+KB_URL=""
+
 # Docker bridge subnet — must not conflict with your LAN or existing Docker networks
 DOCKER_SUBNET="172.20.0.0/16"
 
@@ -79,8 +85,34 @@ MODULES_TO_INSTALL=(
 
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
+# Comma-separated emails allowed to log in as admin via Google SSO
+GOOGLE_ADMIN_EMAILS=""
 # Comma-separated domains allowed to log in via Google SSO (e.g. borealtek.ca)
 GOOGLE_ALLOWED_DOMAINS=""
+
+#===============================================================================
+# OPTIONAL — MAIL (falls back to the `log` driver — mail written to
+# storage/logs/laravel.log instead of sent — if left blank)
+#===============================================================================
+
+MAIL_HOST=""
+MAIL_PORT="587"
+MAIL_USERNAME=""
+MAIL_PASSWORD=""
+MAIL_SCHEME="tls"   # tls | ssl
+MAIL_FROM_ADDRESS=""
+MAIL_FROM_NAME=""
+
+#===============================================================================
+# OPTIONAL — IMAP (global default mailbox-fetch account)
+# Most mailboxes are configured per-mailbox via the Settings UI instead.
+#===============================================================================
+
+IMAP_HOST=""
+IMAP_PORT="993"
+IMAP_USERNAME=""
+IMAP_PASSWORD=""
+IMAP_ENCRYPTION="ssl"
 
 #===============================================================================
 # OPTIONAL — ACTION1 RMM

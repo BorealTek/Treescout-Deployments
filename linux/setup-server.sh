@@ -243,7 +243,7 @@ services:
             - "127.0.0.1:8080:8080"
         env_file:
             - .env
-            - .secrets
+            - .env.secrets
         volumes:
             - storage_data:/var/www/html/storage
             - bootstrap_cache:/var/www/html/bootstrap/cache
@@ -272,7 +272,7 @@ services:
         command: php artisan queue:work --queue=emails,default,long-running --sleep=3 --tries=3 --max-time=3600
         env_file:
             - .env
-            - .secrets
+            - .env.secrets
         volumes:
             - storage_data:/var/www/html/storage
             - bootstrap_cache:/var/www/html/bootstrap/cache
@@ -296,7 +296,7 @@ services:
             done'
         env_file:
             - .env
-            - .secrets
+            - .env.secrets
         volumes:
             - storage_data:/var/www/html/storage
             - bootstrap_cache:/var/www/html/bootstrap/cache
@@ -316,7 +316,7 @@ services:
         command: php artisan reverb:start --host=0.0.0.0 --port=8081
         env_file:
             - .env
-            - .secrets
+            - .env.secrets
         ports:
             - "127.0.0.1:8081:8081"
         volumes:
@@ -503,12 +503,12 @@ EOF
 }
 
 write_secrets() {
-    log_step "Writing .secrets"
-    cat > "${INSTALL_DIR}/.secrets" <<EOF
+    log_step "Writing .env.secrets"
+    cat > "${INSTALL_DIR}/.env.secrets" <<EOF
 APP_GITHUB_API_TOKEN=${APP_GITHUB_API_TOKEN}
 EOF
-    chmod 600 "${INSTALL_DIR}/.secrets"
-    log_success ".secrets written (mode 600)"
+    chmod 600 "${INSTALL_DIR}/.env.secrets"
+    log_success ".env.secrets written (mode 600)"
 }
 
 write_cloudflared_env() {
