@@ -927,8 +927,16 @@ services:
     image: freescout-app
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${HTTP_PORT:-8080}:8080"  # HTTP — Cloudflare tunnel origin (HTTP, not HTTPS)
-      - "127.0.0.1:${HTTPS_PORT:-8443}:8443"  # HTTPS — local emergency access only
+      # 0.0.0.0, not 127.0.0.1: colima's Docker daemon runs inside a Linux VM,
+      # and its hostagent only forwards a bound port to the host's loopback OR
+      # all interfaces — never a single specific host interface (e.g. just
+      # Tailscale's utun0). 127.0.0.1 here would make the app unreachable from
+      # anywhere but localhost, including a cloudflared tunnel or reverse proxy
+      # running on a *different* tailnet host. If this host also has a LAN IP,
+      # the app is reachable there too — the app requires login, but there is
+      # no interface-level way to restrict this at the docker-compose layer.
+      - "0.0.0.0:${HTTP_PORT:-8080}:8080"  # HTTP — Cloudflare tunnel origin (HTTP, not HTTPS)
+      - "0.0.0.0:${HTTPS_PORT:-8443}:8443"  # HTTPS — local emergency access only
     env_file:
       - ./src/.env.secrets
     environment:

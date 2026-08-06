@@ -81,6 +81,8 @@ If `KB_URL` is set to a dedicated subdomain (e.g. `kb.borealtek.ca`), add a seco
 
 The tunnel is managed externally (not started by this script). Emergency HTTPS (self-signed) is available at `<server-ip>:$HTTPS_PORT`.
 
+**colima only — port binding is `0.0.0.0`, not `127.0.0.1`:** colima's Docker daemon runs inside a Linux VM; its hostagent can only forward a port to the host's loopback *or* all interfaces, never a single specific one. This matters if your cloudflared (or reverse proxy) runs on a *different* host than the app — e.g. reaching it over Tailscale — since `127.0.0.1` would make it unreachable from anywhere but the app host itself. The tradeoff: if the host also has a LAN IP, `$HTTP_PORT`/`$HTTPS_PORT` are reachable there too (plain HTTP, no TLS) — there's no docker-compose-layer way to restrict this to just one interface. The app requires login, but treat this as a real exposure, not a non-issue, on a host with an untrusted LAN.
+
 ---
 
 ## Key `deploy.conf` Fields
