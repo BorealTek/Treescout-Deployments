@@ -381,9 +381,18 @@ DEFAULT_INSTALL_DIR="$DEFAULT_INSTALL_DIR"
 # Domain & Cloudflare Tunnel
 DOMAIN_NAME="devtickets.scotchmcdonald.dev"
 
+# Host ports the app binds to (127.0.0.1 only) — point your Cloudflare Tunnel
+# Public Hostname's Service URL at http://localhost:$HTTP_PORT. Defaults to
+# 8080/8443 if unset; only change these if the host runs other services that
+# might also want those ports.
+HTTP_PORT="8080"
+HTTPS_PORT="8443"
+
 # Ticketing / Knowledge Base URL split (optional — both fall back to APP_URL /
 # APP_URL+'/kb' when unset; only set these if you want a dedicated KB hostname,
-# see app/Http/Middleware/SetContextUrl.php)
+# see app/Http/Middleware/SetContextUrl.php). Both hostnames route to the same
+# HTTP_PORT above — SetContextUrl picks ticketing vs. KB by the Host header,
+# not by port.
 TICKET_URL=""
 KB_URL=""
 
@@ -918,8 +927,8 @@ services:
     image: freescout-app
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"  # HTTP — Cloudflare tunnel origin (HTTP, not HTTPS)
-      - "127.0.0.1:8443:8443"  # HTTPS — local emergency access only
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080"  # HTTP — Cloudflare tunnel origin (HTTP, not HTTPS)
+      - "127.0.0.1:${HTTPS_PORT:-8443}:8443"  # HTTPS — local emergency access only
     env_file:
       - ./src/.env.secrets
     environment:
@@ -1804,8 +1813,20 @@ show_completion_message() {
     echo -e "  2. Click your tunnel → Configure → Public Hostname"
     echo -e "  3. Add/Edit Public Hostname:"
     echo -e "     ${YELLOW}Service Type:${NC} HTTP  ${RED}(not HTTPS — tunnel handles TLS)${NC}"
-    echo -e "     ${YELLOW}URL:${NC}          http://localhost:8080"
+    echo -e "     ${YELLOW}URL:${NC}          http://localhost:${HTTP_PORT:-8080}"
     echo -e "     ${YELLOW}Origin Name:${NC}  $DOMAIN_NAME"
+    if [ -n "${KB_URL:-}" ]; then
+        local kb_host
+        kb_host=$(echo "${KB_URL}" | sed -E 's#^https?://##; s#/.*##')
+        if [ "$kb_host" != "$DOMAIN_NAME" ]; then
+            echo ""
+            echo -e "  Add a second Public Hostname (same origin, different host — routed"
+            echo -e "  internally by SetContextUrl based on the KB_URL you configured):"
+            echo -e "     ${YELLOW}Service Type:${NC} HTTP"
+            echo -e "     ${YELLOW}URL:${NC}          http://localhost:${HTTP_PORT:-8080}"
+            echo -e "     ${YELLOW}Origin Name:${NC}  $kb_host"
+        fi
+    fi
     echo ""
     echo -e "  ${CYAN}ℹ  The Cloudflare tunnel encrypts the public-facing connection."
     echo -e "     No SSL is needed between cloudflared and this origin.${NC}"
@@ -1822,7 +1843,7 @@ show_completion_message() {
     echo -e "  • Update:    ${YELLOW}cd $DEFAULT_INSTALL_DIR && ./update.sh${NC}"
     echo -e "  • View logs: ${YELLOW}docker compose logs -f${NC}"
     echo -e "  • Stop:      ${YELLOW}docker compose down${NC}"
-    echo -e "  • Emergency: ${YELLOW}https://localhost:8443${NC} (accept cert warning) or ${YELLOW}http://localhost:8080${NC}"
+    echo -e "  • Emergency: ${YELLOW}https://localhost:${HTTPS_PORT:-8443}${NC} (accept cert warning) or ${YELLOW}http://localhost:${HTTP_PORT:-8080}${NC}"
     echo ""
 }
 

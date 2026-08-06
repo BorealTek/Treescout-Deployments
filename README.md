@@ -68,16 +68,18 @@ The script is idempotent — re-running prompts whether to keep or destroy the e
 
 ## Cloudflare Tunnel
 
-The app nginx serves plain **HTTP on port 8080** — no SSL. The Cloudflare tunnel terminates TLS at the edge and delivers plain HTTP to the origin.
+The app nginx serves plain **HTTP** internally — no SSL. The Cloudflare tunnel terminates TLS at the edge and delivers plain HTTP to the origin. The container always listens on 8080/8443 internally; `HTTP_PORT`/`HTTPS_PORT` in `deploy.conf` (colima only) control which *host* ports those map to — point your tunnel's Service URL at whichever you configured (defaults to 8080/8443).
 
 Configure your tunnel public hostname as:
 
 | Hostname | Service | URL |
 |----------|---------|-----|
-| `tickets.borealtek.ca` | **HTTP** | `localhost:8080` |
+| `tickets.borealtek.ca` | **HTTP** | `localhost:$HTTP_PORT` |
 | `ssh.tickets.borealtek.ca` | SSH | `localhost:22` |
 
-The tunnel is managed externally (not started by this script). Emergency HTTPS (self-signed) is available at `<server-ip>:8443`.
+If `KB_URL` is set to a dedicated subdomain (e.g. `kb.borealtek.ca`), add a second Public Hostname entry pointing at the **same** `localhost:$HTTP_PORT` — `SetContextUrl` routes ticketing vs. KB by the `Host` header, not by port, so one origin serves both.
+
+The tunnel is managed externally (not started by this script). Emergency HTTPS (self-signed) is available at `<server-ip>:$HTTPS_PORT`.
 
 ---
 
@@ -85,6 +87,9 @@ The tunnel is managed externally (not started by this script). Emergency HTTPS (
 
 ```bash
 DOMAIN_NAME="tickets.borealtek.ca"    # Public URL (sets APP_URL)
+KB_URL=""                             # Optional dedicated KB hostname (colima only — see below)
+HTTP_PORT="8080"                      # colima only — host port the tunnel targets; change if
+HTTPS_PORT="8443"                     #   the host runs other services that might want 8080/8443
 DOCKER_SUBNET="192.168.220.0/24"      # Docker bridge subnet (must not conflict with LAN)
 ADMIN_EMAIL="scott.mcdonald@borealtek.ca"
 ADMIN_PASS="..."                       # Saved; used by freescout:install on fresh deploy
