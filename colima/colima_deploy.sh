@@ -1427,13 +1427,16 @@ EOF
 REVERB_APP_SECRET=${reverb_app_secret}
 EOF
 
-    # Google OAuth (if configured) — strip any pre-existing GOOGLE_ADMIN_EMAILS/
-    # GOOGLE_ALLOWED_DOMAINS lines first (.env.example already declares blank
-    # placeholders for both; phpdotenv keeps the FIRST definition of a key it sees,
-    # so appending without stripping left the real values silently shadowed by the
-    # empty placeholder — Google SSO's domain/email allowlist never actually applied).
+    # Google OAuth (if configured) — strip any pre-existing GOOGLE_CLIENT_ID/
+    # GOOGLE_REDIRECT_URI/GOOGLE_ADMIN_EMAILS/GOOGLE_ALLOWED_DOMAINS lines first
+    # (.env.example already declares blank/templated placeholders for all four;
+    # phpdotenv keeps the FIRST definition of a key it sees, so appending
+    # without stripping left the real values silently shadowed by the
+    # placeholder — this previously broke Google SSO login entirely, since
+    # the app always saw an empty GOOGLE_CLIENT_ID regardless of what was
+    # configured).
     if [ -n "${GOOGLE_CLIENT_ID:-}" ]; then
-        grep -vE '^(GOOGLE_ADMIN_EMAILS=|GOOGLE_ALLOWED_DOMAINS=)' "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
+        grep -vE '^(GOOGLE_CLIENT_ID=|GOOGLE_REDIRECT_URI=|GOOGLE_ADMIN_EMAILS=|GOOGLE_ALLOWED_DOMAINS=)' "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
 
         cat >> "$env_file" <<EOF
 
