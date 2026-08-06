@@ -264,7 +264,11 @@ preflight_checks() {
 #===============================================================================
 
 show_banner() {
-    clear
+    # `clear` needs TERM/a TTY — skip it under non-interactive invocations
+    # (automation, `ssh host script`) instead of crashing the whole run.
+    if [ -t 1 ]; then
+        clear
+    fi
     echo -e "${FOREST}       # #### ####${NC}"
     echo -e "${FOREST}     ### \\/#|### |/####${NC}"
     echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}      ${CYAN}  ____                        _ _______   _          ${NC}"
