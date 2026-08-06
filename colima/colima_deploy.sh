@@ -1462,12 +1462,14 @@ install_modules() {
 
         local target_dir="$DEFAULT_INSTALL_DIR/src/Modules/$name"
 
-        # Guard: target_dir exists but isn't a real git checkout — e.g. a stale
-        # copy left behind by an earlier deploy that skipped install_modules()
-        # (empty MODULES_TO_INSTALL) while the module code still shipped some
-        # other way. Re-clone rather than crashing on `git fetch` below.
-        if [ -d "$target_dir" ] && ! git -C "$target_dir" rev-parse --git-dir >/dev/null 2>&1; then
-            log_warning "Module $name exists but is not a git repository (stale copy). Removing and re-cloning..."
+        # Guard: target_dir exists but isn't a real git checkout of its own —
+        # e.g. an uninitialized submodule placeholder, or a stale copy left
+        # behind by an earlier deploy that skipped install_modules(). Check
+        # for a *direct* .git entry rather than `git rev-parse --git-dir`,
+        # which walks up to Treescout-Core's own .git for any plain
+        # subdirectory and would never report these as non-repos.
+        if [ -d "$target_dir" ] && [ ! -e "$target_dir/.git" ]; then
+            log_warning "Module $name exists but is not a git repository (stale/uninitialized copy). Removing and re-cloning..."
             rm -rf "$target_dir"
         fi
 
