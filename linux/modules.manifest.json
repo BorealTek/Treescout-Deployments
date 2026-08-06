@@ -39,11 +39,29 @@
       "description": "Customer-facing self-service portal with separate auth guard",
       "requires": ["Crm"]
     },
+    "ContractManager": {
+      "repo": "https://github.com/BorealTek/ContractManager-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Client contract lifecycle tracking"
+    },
     "Crm": {
       "repo": "https://github.com/BorealTek/Crm-Module.git",
       "branch": "main",
       "private": true,
       "description": "Client and contact management, custom customer fields"
+    },
+    "DeploymentManager": {
+      "repo": "https://github.com/BorealTek/DeploymentManager-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Software deployment tracking and rollout management"
+    },
+    "EmailMigration": {
+      "repo": "https://github.com/BorealTek/EmailMigration-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Mailbox migration tooling"
     },
     "GoogleAdmin": {
       "repo": "https://github.com/BorealTek/GoogleAdmin-Module.git",
@@ -56,6 +74,18 @@
       "branch": "main",
       "private": true,
       "description": "Internal and external documentation / knowledge base"
+    },
+    "PIB": {
+      "repo": "https://github.com/BorealTek/PIB-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "PIB integration module"
+    },
+    "Payment": {
+      "repo": "https://github.com/BorealTek/Payment-Module.git",
+      "branch": "main",
+      "private": true,
+      "description": "Payment processing integration"
     },
     "SoftwareSubscriptions": {
       "repo": "https://github.com/BorealTek/SoftwareSubscriptions-Module.git",

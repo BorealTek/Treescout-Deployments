@@ -61,16 +61,23 @@ INTERACTIVE=true
 REUSE_DB=false
 CLEANUP_NEEDED=false
 
-# Default Modules
+# Default Modules — mirrors the submodule list in Treescout-Core's .gitmodules
+# (kept independent of git submodule linkage; install_modules() clones these
+# as standalone repos so module updates don't require touching the core repo).
 MODULES_TO_INSTALL=(
     "Action1|https://github.com/BorealTek/Action1-Module.git|REPO_TOKEN|main"
     "Alerts|https://github.com/BorealTek/Alerts-Module.git|REPO_TOKEN|main"
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
     "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
+    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
@@ -205,6 +212,21 @@ preflight_checks() {
     if ! command_exists colima; then
         log_warning "colima not found on PATH — assuming an equivalent Docker context is running."
     fi
+
+    # Check GitHub CLI — REPO_TOKEN is derived from `gh auth token` (see
+    # deploy.conf), not stored as a raw PAT on disk. An unauthenticated gh
+    # silently produces an empty REPO_TOKEN, which then fails private module
+    # clones with a confusing error deep into the run — fail fast here instead.
+    if ! command_exists gh; then
+        log_error "GitHub CLI (gh) not found! Install with: brew install gh"
+        exit 1
+    fi
+
+    if ! gh auth status >/dev/null 2>&1; then
+        log_error "gh is not authenticated. Run: gh auth login"
+        exit 1
+    fi
+    log_success "gh authenticated as $(gh api user --jq .login 2>/dev/null || echo 'unknown user')"
 
     # Verify Docker is running
     log_info "Verifying Docker Status..."
@@ -407,9 +429,14 @@ MODULES_TO_INSTALL=(
     "AssetManagement|https://github.com/BorealTek/AssetManagement-Module.git|REPO_TOKEN|main"
     "CaseManager|https://github.com/BorealTek/CaseManager-Module.git|REPO_TOKEN|main"
     "ClientPortal|https://github.com/BorealTek/ClientPortal-Module.git|REPO_TOKEN|main"
+    "ContractManager|https://github.com/BorealTek/ContractManager-Module.git|REPO_TOKEN|main"
     "Crm|https://github.com/BorealTek/Crm-Module.git|REPO_TOKEN|main"
+    "DeploymentManager|https://github.com/BorealTek/DeploymentManager-Module.git|REPO_TOKEN|main"
+    "EmailMigration|https://github.com/BorealTek/EmailMigration-Module.git|REPO_TOKEN|main"
     "GoogleAdmin|https://github.com/BorealTek/GoogleAdmin-Module.git|REPO_TOKEN|main"
     "KnowledgeBase|https://github.com/BorealTek/KnowledgeBase-Module.git|REPO_TOKEN|main"
+    "PIB|https://github.com/BorealTek/PIB-Module.git|REPO_TOKEN|main"
+    "Payment|https://github.com/BorealTek/Payment-Module.git|REPO_TOKEN|main"
     "SoftwareSubscriptions|https://github.com/BorealTek/SoftwareSubscriptions-Module.git|REPO_TOKEN|main"
     "WidgetRegistry|https://github.com/BorealTek/WidgetRegistry-Module.git|REPO_TOKEN|main"
 )
@@ -1431,6 +1458,15 @@ install_modules() {
         fi
 
         local target_dir="$DEFAULT_INSTALL_DIR/src/Modules/$name"
+
+        # Guard: target_dir exists but isn't a real git checkout — e.g. a stale
+        # copy left behind by an earlier deploy that skipped install_modules()
+        # (empty MODULES_TO_INSTALL) while the module code still shipped some
+        # other way. Re-clone rather than crashing on `git fetch` below.
+        if [ -d "$target_dir" ] && ! git -C "$target_dir" rev-parse --git-dir >/dev/null 2>&1; then
+            log_warning "Module $name exists but is not a git repository (stale copy). Removing and re-cloning..."
+            rm -rf "$target_dir"
+        fi
 
         if [ -d "$target_dir" ]; then
             log_info "Module $name already exists. Updating..."
