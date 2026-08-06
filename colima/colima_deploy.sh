@@ -264,11 +264,10 @@ preflight_checks() {
 #===============================================================================
 
 show_banner() {
-    # `clear` needs TERM/a TTY — skip it under non-interactive invocations
-    # (automation, `ssh host script`) instead of crashing the whole run.
-    if [ -t 1 ]; then
-        clear
-    fi
+    # `clear` needs TERM set to a known terminfo entry — under automation
+    # (ssh host script, cron) that's often missing even with a pty allocated.
+    # Never let a cosmetic banner clear abort the whole deploy.
+    clear 2>/dev/null || true
     echo -e "${FOREST}       # #### ####${NC}"
     echo -e "${FOREST}     ### \\/#|### |/####${NC}"
     echo -e "${FOREST}    ##\\/#/ \\||/##/_/##/_#${NC}      ${CYAN}  ____                        _ _______   _          ${NC}"
